@@ -426,28 +426,65 @@ void dali_protocol_init(void) {
     /* State is initialized by the ds struct initializer above */
 }
 
+/* ── 32-bit forward frame handler (IEC 62386-105) ────────────────── */
+static void process_frame_32(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3) {
+    /*
+     * IEC 62386-105 standard commands:
+     *   [addr] [0xFB] [cmd] [0x00]
+     *
+     * 32-bit address byte format (Table 1):
+     *   Bit 7..1 = address field, Bit 0 = address space (0=gear, 1=device)
+     *   Short address: (short_addr << 1) | 0  (for gear)
+     *   Broadcast:     0xFE (gear), 0xFF (device)
+     *   Broadcast UA:  0xFC (gear), 0xFD (device)
+     */
+    if (b1 != 0xFB) return;     /* only standard commands (opcode byte 1) */
+
+    /* Address check for 32-bit frames (gear: bit 0 = 0) */
+    uint8_t my_addr_32 = (ds.short_address <= 63) ? (ds.short_address << 1) : 0xFE;
+    if (b0 != my_addr_32 && b0 != 0xFE && b0 != 0xFC)
+        return;
+
+    uint32_t now = millis();
+
+    switch (b2) {
+    case 0x00:  /* START FW TRANSFER — config repeat required */
+        if (b3 == 0x00 && check_config_repeat(b0, b2, now)) {
+            printf("FW_TRANSFER (IEC105)!\n");
+            dali_phy_send_backward(0xFF);    /* YES */
+            nvm_save();
+            enter_bootloader();
+        }
+        break;
+
+    case 0x05:  /* QUERY FW UPDATE FEATURES */
+        /* Bit 0 = fwUpdateCancelSupported (0 = not supported) */
+        dali_phy_send_backward(0x00);
+        break;
+    }
+}
+
 void dali_protocol_process(void) {
     dali_addressing_check_timeout();
 
     if (!dali_phy_frame_ready()) return;
 
-    uint8_t raw[3];
+    uint8_t raw[4];
     dali_phy_frame_bytes(raw);
     uint8_t bitlen = dali_phy_frame_bits();
 
-    dali_frame_t frame = {
-        .data      = ((uint32_t)raw[0] << 8) | (uint32_t)raw[1],
-        .size      = bitlen,
-        .flags     = DALI_FRAME_FLAG_FORWARD,
-        .timestamp = millis(),
-    };
-    if (bitlen != 16) {
-        frame.flags |= DALI_FRAME_FLAG_ERROR;
-    }
-
-    if (frame.size == 16 && !(frame.flags & DALI_FRAME_FLAG_ERROR)) {
+    if (bitlen == 16) {
+        dali_frame_t frame = {
+            .data      = ((uint32_t)raw[0] << 8) | (uint32_t)raw[1],
+            .size      = 16,
+            .flags     = DALI_FRAME_FLAG_FORWARD,
+            .timestamp = millis(),
+        };
         process_frame(&frame);
+    } else if (bitlen == 32) {
+        process_frame_32(raw[0], raw[1], raw[2], raw[3]);
     }
+    /* else: discard (noise, echo, corruption) */
 }
 
 void dali_protocol_power_on(void) {

@@ -49,7 +49,7 @@ static volatile uint32_t    rx_last_edge_ms = 0;
 static volatile uint16_t    rx_last_capture = 0;
 static volatile uint8_t     rx_last_bus_low = 0;
 static volatile uint8_t     rx_len = 0;
-static volatile uint8_t     rx_msg[3] = {0};
+static volatile uint8_t     rx_msg[4] = {0};
 static volatile uint8_t     rx_frame_ready = 0;
 
 /* ── TX state ────────────────────────────────────────────────────── */
@@ -97,7 +97,7 @@ static void push_halfbit(uint8_t bit) {
     bit &= 1;
     if ((rx_len & 1) == 0) {
         uint8_t i = rx_len >> 4;
-        if (i < 3) {
+        if (i < 4) {
             rx_msg[i] = (rx_msg[i] << 1) | bit;
         }
     }
@@ -137,6 +137,7 @@ void dali_isr_rx_edge(void) {
             rx_msg[0] = 0;
             rx_msg[1] = 0;
             rx_msg[2] = 0;
+            rx_msg[3] = 0;
             rx_state = RX_BIT;
             rx_last_bus_low = 0;
         } else if (bus_low) {
@@ -320,6 +321,7 @@ void dali_phy_frame_bytes(uint8_t *out) {
     out[0] = rx_msg[0];
     out[1] = rx_msg[1];
     out[2] = rx_msg[2];
+    out[3] = rx_msg[3];
 }
 
 uint32_t dali_phy_last_rx_edge_ms(void) {

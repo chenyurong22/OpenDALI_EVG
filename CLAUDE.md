@@ -34,14 +34,14 @@ Define ONE `EVG_MODE_xxx` in `hardware.h` (or via `-DEVG_MODE_xxx` compiler flag
 
 | Mode | DT | Channels | Driver | Tc | Primary | Flash |
 |------|-----|----------|--------|-----|---------|-------|
-| `EVG_MODE_ONOFF` | 6 | 0 | PSU_CTRL only | - | - | 8.0 KB |
-| `EVG_MODE_SINGLE` | 6 | 1 PWM | TIM1 | - | - | 8.7 KB |
-| `EVG_MODE_CCT` | 8 | 2 PWM | TIM1 | yes | no | 9.7 KB |
-| `EVG_MODE_RGB` | 8 | 3 PWM | TIM1 | yes | yes | 9.8 KB |
-| `EVG_MODE_RGBW` | 8 | 4 PWM | TIM1 | yes | yes | 9.9 KB |
-| `EVG_MODE_WS2812` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 10.3 KB |
-| `EVG_MODE_SK6812_RGB` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 10.3 KB |
-| `EVG_MODE_SK6812_RGBW` | 8 | 4 (GRBW) | SPI+DMA | yes | yes | 10.4 KB |
+| `EVG_MODE_ONOFF` | 6 | 0 | PSU_CTRL only | - | - | 8.6 KB |
+| `EVG_MODE_SINGLE` | 6 | 1 PWM | TIM1 | - | - | 9.3 KB |
+| `EVG_MODE_CCT` | 8 | 2 PWM | TIM1 | yes | no | 10.4 KB |
+| `EVG_MODE_RGB` | 8 | 3 PWM | TIM1 | yes | yes | 10.5 KB |
+| `EVG_MODE_RGBW` | 8 | 4 PWM | TIM1 | yes | yes | 10.6 KB |
+| `EVG_MODE_WS2812` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 11.0 KB |
+| `EVG_MODE_SK6812_RGB` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 11.0 KB |
+| `EVG_MODE_SK6812_RGBW` | 8 | 4 (GRBW) | SPI+DMA | yes | yes | 11.1 KB |
 
 `EVG_MODE_ONOFF`: No LED driver, no TIM1, no log table. Only PA2 (PSU_CTRL) switches on/off. PHY_MIN=254, so any non-zero arc level is clamped to 254 (full on). Useful for relay/switch/contactor control via DALI.
 
@@ -105,12 +105,13 @@ pio run -t upload
 - Structured frame type (`dali_frame.h`): `dali_frame_t { data, size, flags, timestamp }` with FORWARD / BACKWARD / ERROR / COLLISION / ECHO flag bits. RX path builds the frame in `dali_process()` and passes a pointer into `process_frame()`; ERROR/ECHO frames are rejected at the top of the dispatcher.
 - TX echo / collision detection (IEC 62386-101 §8.2.4.4): `dali_isr_tx_tick()` samples `rx_bus_is_active()` at the start of every Te slot (skipping `TX_SETTLE` and `TX_START_LO`) and compares against the level we drove. Mismatch sets `tx_collision_flag`, releases the bus to idle within 1 Te, and aborts the frame. The flag is read-and-cleared via `dali_tx_consume_collision()` in the main loop, which prints `COLLISION` to debug serial. Requires a real DALI PHY (open-drain dominant-low bus) — the default configuration. With `DALI_NO_PHY` push-pull GPIO, collision detection is non-functional.
 - Full addressing: INITIALISE, RANDOMISE, COMPARE, SEARCHADDR, PROGRAM SHORT, WITHDRAW, VERIFY SHORT, QUERY SHORT, TERMINATE
+- 32-bit forward frame support (IEC 62386-101, 7.4.3): PHY decodes both 16-bit and 32-bit frames, protocol dispatcher routes by frame length. Currently handles START FW TRANSFER (IEC 62386-105) for bootloader entry via 32-bit frame.
 - Config repeat validation (100 ms window for INITIALISE/RANDOMISE and commands 32–128)
 - 15-minute initialisation timeout
 - Power-on level: applied at boot via dali_power_on()
 - IEC 62386-102 §9.3 logarithmic dimming curve (254-entry LUT)
 - PSU control output (PA2): HIGH when any channel on, LOW when all off
-- **Flash persistence**: short address, min/max/power-on/sys-fail levels, fade time/rate, scenes, groups, DT8 colour stored in last 64-byte flash page (0x08003FC0). Deferred write with 5-second dirty timer to batch config changes.
+- **EEPROM persistence**: short address, min/max/power-on/sys-fail levels, fade time/rate, scenes, groups, DT8 colour stored in AT24C256 I2C EEPROM (see "Persistent Storage" section below). Deferred write with 5-second dirty timer to batch config changes.
 - Full command list: see `Commands_Implemented.md`
 
 ### Implemented (IEC 62386-209, DT8 Colour Control)
@@ -127,60 +128,46 @@ pio run -t upload
 - DT6 backward compatibility: when no DT8 colour is set, all channels equal
 - **Colour persistence**: RGBW levels + Tc stored in NVM, restored at boot
 
-## Flash Persistence (dali_nvm.c)
+## Persistent Storage (I2C EEPROM)
 
-### Storage Layout (64 bytes at 0x08003FC0)
-```
-Offset  Size  Field
-0x00    4     magic (0x44414C49 = "DALI")
-0x04    1     short_address
-0x05    1     max_level
-0x06    1     min_level
-0x07    1     power_on_level
-0x08    1     sys_fail_level
-0x09    1     fade_time
-0x0A    1     fade_rate
-0x0B    1     (padding)
-0x0C    2     group_membership
-0x0E    16    scene_level[16]
-0x1E    4     colour[4] (R,G,B,W — 0xFF = default 254)
-0x22    2     colour_tc (mirek — 0xFFFF = not set)
-0x24    1     ext_fade ((mult<<4)|base, 0xFF = not set)
-0x25    23    (reserved for future Tc limits, etc.)
-```
+### AT24C256C EEPROM
+- 256 Kbit (32 KB), 512 pages × 64 bytes, I2C 100 kHz on PC1 (SDA) / PC2 (SCL)
+- 5 ms write cycle, 1,000,000 write endurance (vs 10,000 for internal flash)
+- Driver: `src/eeprom/eeprom.c` — `eeprom_init()`, `eeprom_write()`, `eeprom_read()`
+- Layout defined in `src/eeprom/eeprom_layout.h` (shared between firmware and bootloader)
 
-### Write Strategy
-- Config commands set a **dirty flag** via `nvm_mark_dirty()`
-- `nvm_tick()` in main loop saves to flash after **5 seconds** of no further changes
-- Batches rapid config changes (e.g., 16 scene stores) into a single flash erase+write
-- Flash erase+write takes ~6ms total
-- CH32V003 flash endurance: ~10,000 erase cycles per page
-
-### Future: I2C EEPROM (AT24C256C)
-PC1 (I2C1_SDA) and PC2 (I2C1_SCL) are reserved for external **AT24C256C** EEPROM. PSU_CTRL was moved from PC1 to PA2 to free the I2C pins.
-
-**AT24C256C specs:** 256 Kbit (32 KB), 512 pages × 64 bytes, I2C up to 1 MHz, 5 ms write cycle, 1M write endurance, 1.7–5.5 V, SOIC-8. JLCPCB part with datasheet available. The 64-byte page size matches the CH32V003 internal flash page size exactly — 1:1 page mapping.
-
-**Planned EEPROM memory layout:**
+### EEPROM Memory Layout
 ```
 AT24C256C (32 KB = 0x0000–0x7FFF)
-├── 0x0000–0x003F  DALI config (64 B) — replaces internal flash NVM entirely
-└── 0x0040–0x7FFF  Firmware staging area (32,704 B) — for safe DALI bootloader updates
+├── 0x0000–0x003F  Device identity (64 B) — written by firmware at boot
+│   ├── 0x0000  magic (4 B, "DALI" = 0x44414C49)
+│   ├── 0x0004  GTIN (6 B, MSB first)
+│   ├── 0x000A  EVG mode ID (1 B, from hardware.h EVG_MODE_ID)
+│   ├── 0x000B  HW version major/minor (2 B)
+│   ├── 0x000D  FW version major/minor (2 B)
+│   └── 0x000F  short_address (1 B, updated on address change)
+├── 0x0040–0x007F  DALI config (64 B, dali_nvm_t struct)
+└── 0x0080–0x7FFF  Firmware staging area (32,640 B) — used by bootloader
 ```
 
-**When EEPROM is active:**
-- `dali_nvm.c` reads/writes config directly to EEPROM (1M cycles) instead of internal flash (10K cycles)
-- Internal flash NVM page at 0x08003FC0 is **no longer used** — full 16 KB available for firmware code
-- The "firmware must not extend past 0x3FC0" constraint is eliminated
+### NVM API (dali_nvm.c)
+- Internal flash NVM page at 0x08003FC0 is **no longer used** — full 16 KB available for firmware
+- `dali_nvm.c` reads/writes config to EEPROM at address 0x0040
+- Same API: `nvm_init()`, `nvm_save()`, `nvm_mark_dirty()`, `nvm_tick()`
+- Deferred write: dirty flag + 5-second debounce timer (unchanged)
+- Identity block (GTIN, EVG mode, versions, short address) written at every boot and on address change — read by bootloader for Block 0 validation
 
-**Safe firmware staging (DALI bootloader A/B update):**
-- DALI bootloader receives firmware over bus → writes to EEPROM staging area page-by-page
-- After full transfer: CRC32 verify EEPROM content
-- If valid: erase + reprogram internal flash from EEPROM, verify, then boot new firmware
-- If DALI transfer fails or power lost during reception → EEPROM has partial/invalid data → chip boots current firmware from internal flash (not bricked)
-- If power lost during internal flash reprogram → bootloader (in boot area at 0x1FFFF000, never erased) survives, sees valid EEPROM image on next boot, retries the flash write
-- 32 KB staging area fits all firmware modes (largest is SK6812_RGBW at 10.4 KB) with room for future growth up to full 16 KB
-- Estimated bootloader size with I2C + EEPROM staging: ~1200–1400 bytes (fits in 1920-byte boot area)
+### EVG Mode IDs (for firmware update device key validation)
+| Mode | ID | Defined in |
+|------|-----|-----------|
+| ONOFF | 0x01 | hardware.h `EVG_MODE_ID` |
+| SINGLE | 0x02 | |
+| CCT | 0x03 | |
+| RGB | 0x04 | |
+| RGBW | 0x05 | |
+| WS2812 | 0x06 | |
+| SK6812_RGB | 0x07 | |
+| SK6812_RGBW | 0x08 | |
 
 ## Peripheral Usage
 
@@ -189,9 +176,9 @@ AT24C256C (32 KB = 0x0000–0x7FFF)
 | TIM1 | PWM generation on CH1-CH4 (20 kHz, 2400-step resolution) |
 | TIM2 | Free-running 1 MHz counter for DALI edge timing (CH2=TX OC, CH4=idle timeout OC) |
 | EXTI0 | Both-edge interrupt on PC0 for DALI RX |
+| I2C1 | AT24C256 EEPROM (PC1=SDA, PC2=SCL, 100 kHz) |
 | SysTick | 1 ms tick for millis() — used by DALI timeout logic |
 | USART1 | Debug printf on PD5 (115200 baud, configured by ch32fun) |
-| Flash | Last 64-byte page (0x08003FC0) for NVM persistence |
 
 ## Important Notes
 
@@ -199,7 +186,7 @@ AT24C256C (32 KB = 0x0000–0x7FFF)
 - **TIM1 MOE**: TIM1 is an advanced timer — `BDTR.MOE` must be set or PWM outputs won't appear. This is already handled in `pwm_init()`.
 - **ISR attribute**: All ISRs must use `__attribute__((interrupt))` for correct RISC-V hardware stacking on CH32V003.
 - **Log dimming table**: 508 bytes in flash. Changing PWM frequency (ATRLR) requires regenerating the table. Use: `python -c "for i in range(1,255): x=10**((i-1)*3/253-1); print(round(x/100*ATRLR))"`
-- **Flash storage page**: 0x08003FC0 (last 64 bytes of 16KB). Used by dali_nvm.c for persistent storage. Firmware code must not extend past 0x3FC0 (currently ends at ~0x24D0).
+- **EEPROM storage**: All persistent config is now in AT24C256 EEPROM. Internal flash page 0x08003FC0 is no longer used — full 16 KB available for firmware code.
 
 ## Documentation Consistency
 
@@ -225,24 +212,36 @@ When making changes to the firmware, always check and update all related documen
 - Flash: `Bootloader/flash.bat` (wlink.exe — configurebootloader.bin + bootloader.bin at 0x1FFFF000)
 - See `Bootloader/README.md` for full details
 
-### DALI Bootloader (EXPERIMENTAL — WORKING)
+### DALI Bootloader — Original Vendor Protocol (WORKING)
 - Location: `DALI_Bootloader/`
-- Size: ~976/1920 bytes (51% of boot area)
-- **Not validated against standard DALI systems** — tested only with custom Pico bitbang master
-- Polling Manchester decoder at 1200 baud on PC0, TX on PC5
-- Reads NVM page (0x08003FC0) for device short address — filters frames by address (S=1)
-- Protocol: standard DALI 16-bit forward frames with S=1 command addressing
-- Commands: CMD_ERASE (0x84/132), CMD_DATA (0x85/133), CMD_COMMIT (0x86/134), CMD_BOOT (0x87/135) — vendor-specific reserved range (IEC 62386-102, bytes 129–143)
-- Two-frame data transfer: CMD_DATA sets flag, next frame's data byte is firmware byte
-- ACK (0x01) backward frame per 64-byte page for flow control
-- Software entry: DALI cmd 131 (vendor-reserved, config repeat) writes RAM magic word at 0x200007F0, resets into bootloader
-- Hardware entry: hold PC7 LOW during reset
-- Clock fix: explicitly resets to HSI 24 MHz (PFIC system reset doesn't reliably reset PLL)
-- Upload script: `DALI_Bootloader/dali_upload.ps1` (~11 min for 10 KB firmware with conservative timing)
-- **Verified working** (2026-03-10): 9856 bytes, 154 pages, all ACK'd, firmware booted and responded to DALI commands after upload
-- Self-contained build: all dependencies in `DALI_Bootloader/ch32v003fun/` (no USB_Bootloader dependency)
+- Size: ~1616/1920 bytes (84% of boot area)
+- Protocol: standard DALI 16-bit forward frames with vendor-specific commands (IEC 62386-102, bytes 129–143)
+- Commands: CMD_ERASE (0x84), CMD_DATA (0x85), CMD_COMMIT (0x86), CMD_BOOT (0x87)
+- Two-frame data transfer: CMD_DATA sets flag, next frame's data byte is firmware byte (~11 min for 10 KB)
+- I2C EEPROM staging: firmware received via DALI is stored in AT24C256 EEPROM, then copied to flash on CMD_COMMIT
+- Software entry: DALI cmd 131 (vendor-reserved, config repeat) writes RAM magic word, resets into bootloader
+- Hardware entry: hold PA1 LOW during reset
 - Build: `DALI_Bootloader/build.bat`
 - Flowchart: `DALI_Bootloader/bootloader_protocol.png` (+ `.mmd` source)
+
+### DALI Bootloader — IEC 62386-105 Compatible (NEW)
+- Location: `DALI_Bootloader/`
+- Size: ~1876/1920 bytes (97.7% of boot area)
+- Protocol: 32-bit forward frames (IEC 62386-101, 7.4.3) for bulk data, standard IEC 62386-105 commands
+- Bulk transfer uses TRANSFER BLOCK DATA (0xBD) — 3 firmware bytes per frame, no per-frame response (~2.5 min for 10 KB, ~4.5x faster)
+- **Block 0 validation**: GTIN (6 bytes) + Device key byte 0 (EVG mode ID) compared against EEPROM identity block. Mismatch → QUERY BLOCK FAULT returns YES → master aborts
+- Block 1..n firmware data extracted from block structure (headers/CRCs skipped, no CRC verification)
+- I2C EEPROM staging: firmware stored in AT24C256 staging area (0x0080+), copied to flash on FINISH FW UPDATE
+- Reads device identity (GTIN, EVG mode, short address) from EEPROM identity block (0x0000), written by firmware at boot
+- Standard commands: START FW TRANSFER, FINISH FW UPDATE, RESTART FW, QUERY FW UPDATE RUNNING, QUERY BLOCK FAULT
+- QUERY FW UPDATE FEATURES handled by firmware (responds 0x00 = cancel not supported)
+- Software entry: firmware handles START FW TRANSFER (32-bit, config repeat), responds YES, writes magic word, resets. Bootloader detects magic word → update mode enabled immediately
+- Hardware entry: hold PA1 LOW during reset → bootloader responds YES to any subsequent START FW TRANSFER
+- Auto-reboots after successful FINISH FW UPDATE (no separate RESTART FW needed)
+- Compatible with standard DALI firmware update masters
+- Build: `DALI_Bootloader/build.bat`
+- Flowchart: `DALI_Bootloader/bootloader_protocol.png` (+ `.mmd` source)
+- See `DALI_Bootloader/README.md` for full protocol details
 
 ### TODO: OpenKNX GW-REG1-Dali as DALI upload master
 - The **umbau** branch of [GW-REG1-Dali](https://github.com/OpenKNX/GW-REG1-Dali) (ESP32 variant) has a WebSocket JSON interface that can send arbitrary DALI frames with backward frame listening — no firmware changes needed
@@ -280,7 +279,7 @@ Key scripts:
 
 ## Resource Usage (RGBW default)
 
-- Flash: 9,668 B (59.0% of 16 KB)
+- Flash: 10,588 B (64.6% of 16 KB) — includes I2C EEPROM driver
 - RAM: 136 B (6.6% of 2 KB)
 
 ## Notes on __WFI() / Sleep

@@ -1,24 +1,20 @@
 /*
-    dali_nvm.h - Non-volatile memory (flash) persistence for DALI configuration
+    dali_nvm.h - Non-volatile storage for DALI configuration
 
-    Stores DALI operating parameters in the last 64-byte flash page
-    (0x08003FC0) of the CH32V003 16 KB flash. Uses deferred write:
-    config commands set a dirty flag, and nvm_tick() writes to flash
-    after 5 seconds of no changes (batches burst writes, reduces wear).
+    Stores DALI operating parameters in the AT24C256 I2C EEPROM at
+    address EE_ADDR_CONFIG (see eeprom_layout.h). Uses deferred write:
+    config commands set a dirty flag, and nvm_tick() writes to EEPROM
+    after 5 seconds of no changes (batches burst writes).
 
-    CH32V003 flash endurance: ~10,000 erase cycles per page.
-    For future upgrade path: swap to I2C EEPROM (1M cycles) by
-    replacing nvm_save/nvm_load internals without changing the API.
+    AT24C256 endurance: 1,000,000 write cycles (vs 10,000 for flash).
+
+    The API is unchanged from the original flash-based implementation.
+    All callers use nvm_init/nvm_save/nvm_mark_dirty/nvm_tick.
 */
 #ifndef _DALI_NVM_H
 #define _DALI_NVM_H
 
 #include <stdint.h>
-
-/* Flash page address — last 64 bytes of 16 KB flash.
-   Must not overlap with firmware code (check linker output). */
-#define NVM_FLASH_ADDR      0x08003FC0
-#define NVM_FLASH_PAGE_SIZE 64
 
 /* Magic number to validate stored data ("DALI" in ASCII) */
 #define NVM_MAGIC           0x44414C49
@@ -27,13 +23,8 @@
 #define NVM_SAVE_DELAY_MS   5000
 
 /*
- * NVM data structure — packed into 64-byte flash page.
- * Field order chosen for natural alignment (uint32_t first, then
- * uint16_t, then uint8_t arrays). Total: 60 bytes < 64 bytes.
- *
- * The _reserved block allows adding fields (e.g., DT8 Tc limits)
- * in future firmware versions without changing the struct layout
- * or invalidating existing stored data.
+ * NVM data structure — stored in EEPROM config area (64 bytes).
+ * Layout matches the former flash NVM struct for compatibility.
  */
 typedef struct dali_nvm_t {
     uint32_t magic;              /* 0x44414C49 = valid data */
@@ -53,47 +44,24 @@ typedef struct dali_nvm_t {
     uint8_t  _reserved[23];     /* Future use — initialized to 0xFF */
 } dali_nvm_t;
 
-/*
- * Initialize NVM subsystem.
- * Reads flash page, validates magic. If valid, calls dali_set_nvm_state()
- * to restore persistent variables. If invalid (first boot or corrupted),
- * leaves defaults from dali_slave.c unchanged.
- * Call BEFORE dali_power_on().
- */
+/* Initialize NVM — reads EEPROM, restores state if valid.
+ * Also writes device identity block (GTIN, EVG mode, versions).
+ * Call eeprom_init() BEFORE this. Call BEFORE dali_power_on(). */
 void nvm_init(void);
 
-/*
- * Write current state to flash immediately.
- * Calls dali_get_nvm_state() to pack variables, then erases and
- * programs the flash page. Takes ~6 ms (interrupts may be delayed).
- * Normally called by nvm_tick(); can be called directly if needed.
- */
+/* Write current state to EEPROM immediately. ~10 ms (write cycle). */
 void nvm_save(void);
 
-/*
- * Mark NVM as dirty — a persistent variable has changed.
- * Records the current timestamp. nvm_tick() will save after
- * NVM_SAVE_DELAY_MS of no further changes.
- */
+/* Mark NVM as dirty — a persistent variable has changed. */
 void nvm_mark_dirty(void);
 
-/*
- * Main loop tick — call continuously from while(1).
- * Checks if dirty flag is set and enough time has elapsed since
- * the last change, then saves to flash.
- */
+/* Main loop tick — saves to EEPROM after NVM_SAVE_DELAY_MS of no changes. */
 void nvm_tick(void);
 
-/*
- * Pack current device state (ds) into NVM struct for flash storage.
- * Called by nvm_save() before writing to flash.
- */
+/* Pack current device state (ds) into NVM struct. */
 void nvm_pack_state(dali_nvm_t *nvm);
 
-/*
- * Restore device state (ds) from NVM struct loaded from flash.
- * Called by nvm_init() at boot when valid data is found.
- */
+/* Restore device state (ds) from NVM struct. */
 void nvm_unpack_state(const dali_nvm_t *nvm);
 
 #endif

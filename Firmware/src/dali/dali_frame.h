@@ -33,7 +33,7 @@
  *             upper 16 bits hold [addr_byte:data_byte] (addr in bits 15..8,
  *             data in bits 7..0 of the lower half-word). The convenience
  *             accessors below extract them.
- *  size:      Number of valid bits (8, 16, or 24).
+ *  size:      Number of valid bits (8, 16, or 32).
  *  flags:     Bitmask of DALI_FRAME_FLAG_* values.
  *  timestamp: millis() value at frame completion (set by RX path).
  */

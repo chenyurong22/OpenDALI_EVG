@@ -1,5 +1,5 @@
 @echo off
-REM Build DALI bootloader for CH32V003 (1920-byte boot area)
+REM Build IEC 62386-105 DALI bootloader for CH32V003 (1920-byte boot area)
 REM Dependencies (ch32v003fun.h, libgcc.a) are in ch32v003fun/ subfolder.
 REM Toolchain: PlatformIO's riscv-wch-elf-gcc, auto-detected via USERPROFILE.
 
@@ -19,10 +19,10 @@ set LDSCRIPT=bootloader.ld
 echo Cleaning...
 del /q dali_bootloader.bin dali_bootloader.elf dali_bootloader.lst dali_bootloader.map 2>nul
 
-echo Building DALI bootloader...
+echo Building IEC 62386-105 DALI bootloader...
 "%PREFIX%-gcc" -o dali_bootloader.elf ^
   startup.S ^
-  dali_bootloader.c ^
+  dali_bootloader_105.c ^
   -g -Os -flto -ffunction-sections -fdata-sections -fmessage-length=0 -msmall-data-limit=8 ^
   -march=rv32ec -mabi=ilp32e -DCH32V003=1 ^
   -static-libgcc -fno-builtin ^

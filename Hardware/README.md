@@ -46,6 +46,51 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 
 **USB** (bootloader only): PD4 (D+), PD2 (D-), PD0 (DPU). Active only when boot button (PA1) is held low during reset. Do NOT connect USB while the EVG is on a DALI bus.
 
+#### Hardware Validation
+
+| Test | Target | Result | Evidence |
+|------|--------|--------|----------|
+| DALI RX Manchester waveform | Clean edges, correct timing | **PASS** — 3.7V swing, sharp edges, correct 1200 baud timing | See below |
+| C24 voltage under sustained DALI traffic | > 12.5V | **PASS** — 14.40V min / 14.84V max (0.44V drop at 16V supply, 32 fps) | — |
+| 3.3V rail stability under sustained traffic | Stable within CH32V003 spec (2.7–5.5V) | **PASS** — 3.42V min / 3.63V max (20mV additional ripple = noise only) | — |
+| Current consumption (firmware running) | < 2 mA | **PASS** — 1.69 mA (169mV over 100R shunt) | — |
+
+##### DALI RX Waveform
+
+Oscilloscope capture of the raw Manchester-encoded signal on PC3 (DALI RX, via PHY transceiver) during a broadcast QUERY GEAR PRESENT (0xFF 0x91) frame. 0.50V/div, 2ms/div. Signal swings 0V to 3.7V with clean edges. The 16-bit forward frame (start bit + 16 data bits) is clearly visible with correct 1200 baud timing (~833µs per bit period).
+
+![DALI RX Waveform](Controller/validation/rx_manchester_waveform.jpg)
+
+##### C24 Voltage Stability
+
+Voltage across C24 (DALI bus power supply decoupling) while rapidly sending DALI commands over an extended period. The voltage must remain above **12.5V** to ensure the circuit works at the lowest allowed DALI bus voltage (9.5V).
+
+**Calculation:** The DC-DC converter requires a minimum of 5V input. The bridge rectifier drops ~1V (2 diodes). So C24 must stay above 6V for the converter to regulate. At the minimum DALI bus voltage of 9.5V, this allows a maximum voltage drop of 3.5V (9.5V - 6V). Our test supply runs at 16V, so the equivalent pass/fail threshold is 16V - 3.5V = **12.5V**. If C24 stays above 12.5V at 16V supply, it will stay above 6V at 9.5V supply. Note: this is a linear approximation — actual energy stored in C24 scales with V², so the real margin at 9.5V will be slightly worse. Best estimate for now until tested at actual minimum bus voltage.
+
+**Measurement procedure:** DALI EVG firmware (RGBW mode) running on the target. An OpenKNX DALI gateway sent continuous broadcast QUERY GEAR PRESENT (0xFF 0x91) frames at maximum bus rate (~32 frames/sec, 25ms spacing per IEC 62386-101) for 5 seconds (~160 frames total). Oscilloscope probe on C24, DC coupling, 2V/div, 50ms/div timebase, min/max measurement enabled.
+
+**Result (2026-05-02):**
+- Bus supply voltage: 16V
+- Maximum at C24: **14.84V**
+- Minimum at C24: **14.40V**
+- Voltage drop: **0.44V** (well within 3.5V budget)
+- **PASS** — extrapolated minimum at 9.5V bus: ~9.06V (above 6V threshold)
+
+Note: earlier measurement (14.91V/14.29V, 0.62V drop) included a parasitic capacitor on the 3.3V rail from the programming setup. Values above are without the extra capacitor, representing production conditions.
+
+**3.3V rail (after buck converter):**
+- No traffic: 3.63V max / 3.44V min
+- Under sustained traffic (32 fps): 3.63V max / 3.42V min
+- **Stable** — only 20mV additional ripple under load. CH32V003 operating range is 2.7–5.5V, so 3.42V is well within spec.
+
+##### Current Consumption
+
+Total current draw of the Controller board with firmware running. Target: < 2 mA to stay within DALI bus power limits.
+
+**Measurement (2026-05-02):** 100R shunt resistor in series with the supply. DALI EVG firmware (RGBW mode) running, bus idle. Measured 169mV across the shunt → **1.69 mA**. Well within the 2 mA DALI bus power budget.
+
+---
+
 ### LoadBoard 250W RGBW
 
 LED driver and AC power switching board. Connects to the Controller via a 10-pin FFC cable (0.5 mm pitch) and provides:

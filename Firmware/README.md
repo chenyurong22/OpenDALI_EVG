@@ -12,14 +12,14 @@ The firmware supports 8 LED output modes, selected via a single `EVG_MODE_xxx` d
 
 | Mode | DT | Channels | Driver | Tc | Primary | Flash |
 |------|-----|----------|--------|-----|---------|-------|
-| `EVG_MODE_ONOFF` | 6 | 0 | PSU_CTRL only | - | - | 8.0 KB |
-| `EVG_MODE_SINGLE` | 6 | 1 PWM | TIM1 | - | - | 8.7 KB |
-| `EVG_MODE_CCT` | 8 | 2 PWM | TIM1 | yes | no | 9.7 KB |
-| `EVG_MODE_RGB` | 8 | 3 PWM | TIM1 | yes | yes | 9.8 KB |
-| `EVG_MODE_RGBW` | 8 | 4 PWM | TIM1 | yes | yes | 9.9 KB |
-| `EVG_MODE_WS2812` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 10.3 KB |
-| `EVG_MODE_SK6812_RGB` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 10.3 KB |
-| `EVG_MODE_SK6812_RGBW` | 8 | 4 (GRBW) | SPI+DMA | yes | yes | 10.4 KB |
+| `EVG_MODE_ONOFF` | 6 | 0 | PSU_CTRL only | - | - | 8.6 KB |
+| `EVG_MODE_SINGLE` | 6 | 1 PWM | TIM1 | - | - | 9.3 KB |
+| `EVG_MODE_CCT` | 8 | 2 PWM | TIM1 | yes | no | 10.4 KB |
+| `EVG_MODE_RGB` | 8 | 3 PWM | TIM1 | yes | yes | 10.5 KB |
+| `EVG_MODE_RGBW` | 8 | 4 PWM | TIM1 | yes | yes | 10.6 KB |
+| `EVG_MODE_WS2812` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 11.0 KB |
+| `EVG_MODE_SK6812_RGB` | 8 | 3 (GRB) | SPI+DMA | yes | yes | 11.0 KB |
+| `EVG_MODE_SK6812_RGBW` | 8 | 4 (GRBW) | SPI+DMA | yes | yes | 11.1 KB |
 
 Default: `EVG_MODE_RGBW`. ONOFF mode compiles out all LED drivers, log table, and TIM1 — only PSU_CTRL (PA2) switches on/off. PHY_MIN = 254 (any non-zero arc level → full on). SINGLE mode compiles out all DT8 code (~1 KB savings).
 
@@ -38,7 +38,7 @@ Default: `EVG_MODE_RGBW`. ONOFF mode compiles out all LED drivers, log table, an
 
 | Area | Status |
 |------|--------|
-| Forward frame RX (16-bit Manchester decode) | Working |
+| Forward frame RX (16-bit and 32-bit Manchester decode) | Working |
 | Backward frame TX (8-bit Manchester encode) | Working |
 | Short address, group, and broadcast addressing | Working |
 | Full addressing protocol (INITIALISE, RANDOMISE, SEARCHADDR, PROGRAM) | Working |
@@ -54,10 +54,11 @@ Default: `EVG_MODE_RGBW`. ONOFF mode compiles out all LED drivers, log table, an
 | DT8 RGBW colour control (SET TEMP RGB/WAF, ACTIVATE) | Working |
 | DT8 colour temperature with Tc-to-RGBW conversion (2700K-6500K) | Working |
 | DT8 queries (247-252) | Working |
-| NVM flash persistence (all config + colour restored at boot) | Working |
+| NVM persistence via I2C EEPROM (AT24C256, all config + colour + identity) | Working |
 | PSU control output (PA2, auto on/off) | Working |
 | WS2812/SK6812 digital LED strip output (SPI1+DMA) | Untested |
 | DALI PHY transceiver mode (default) and direct GPIO mode (`DALI_NO_PHY`) | Working |
+| IEC 62386-105 START FW TRANSFER (32-bit frame) → bootloader entry | Working |
 
 ## What Doesn't Work / Not Implemented
 
@@ -111,9 +112,9 @@ wlink flash .pio/build/genericCH32V003F4P6/firmware.bin
 
 | Resource | RGBW |
 |----------|------|
-| Flash | 9,660 B / 16,384 B (59.0%) |
+| Flash | 10,588 B / 16,384 B (64.6%) |
 | RAM | 136 B / 2,048 B (6.6%) |
-| NVM | 64 B at 0x08003FC0 (last flash page) |
+| NVM | AT24C256 I2C EEPROM: identity (64 B) + config (64 B) + firmware staging (32,640 B) |
 
 ## Documentation
 

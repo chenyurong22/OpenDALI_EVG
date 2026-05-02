@@ -35,6 +35,7 @@
 #include "dali/protocol/dali_fade.h"
 #include "dali/dali_state.h"
 #include "dali/nvm/dali_nvm.h"
+#include "eeprom/eeprom.h"
 #include "led/led_driver.h"
 
 /* ====================================================================
@@ -204,8 +205,9 @@ void TIM2_IRQHandler(void) {
  *   6. led_driver_init() — LED output (TIM1 PWM or SPI+DMA for WS2812)
  *   7. dali_phy_init()   — TIM2 + EXTI0 for DALI Manchester RX/TX
  *   8. callbacks         — Connect DALI level/colour changes to LED driver
- *   9. nvm_init()        — Load persisted config from flash (address, scenes, etc.)
- *  10. dali_power_on()   — Apply power-on level (from NVM or default 254)
+ *   9. eeprom_init()     — Initialize I2C1 for AT24C256 EEPROM
+ *  10. nvm_init()        — Load persisted config from EEPROM + write identity block
+ *  11. dali_power_on()   — Apply power-on level (from NVM or default 254)
  * ==================================================================== */
 int main(void) {
     SystemInit();
@@ -218,6 +220,7 @@ int main(void) {
     dali_phy_init();
     dali_protocol_set_arc_callback(on_level);
     dali_protocol_set_colour_callback(on_colour);
+    eeprom_init();
     nvm_init();
     dali_protocol_power_on();
 

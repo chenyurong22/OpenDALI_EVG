@@ -1,26 +1,28 @@
-# DALI Bootloader for CH32V003
+# DALI Bootloader for CH32V003 — IEC 62386-105 Compatible
 
-> **HIGHLY EXPERIMENTAL** — This bootloader has been tested with a custom Pico-based DALI master only. It has NOT been validated against a standard DALI system (e.g., commercial DALI master, multi-device bus). Use at your own risk.
+Firmware-over-DALI-bus bootloader using 32-bit forward frames as specified in IEC 62386-105:2020. Fits in the 1920-byte boot area. Receives firmware via standard DALI protocol, stages it in an external I2C EEPROM, validates device identity via Block 0, then copies to internal flash.
 
-Firmware-over-DALI-bus bootloader for CH32V003. Fits in the 1920-byte boot area. Receives firmware via standard DALI Manchester-encoded frames on the existing DALI RX/TX pins — no additional hardware needed.
-
-**~1064 / 1920 bytes (55%)** — leaves room for future enhancements.
+**~1876 / 1920 bytes (97.7%)** — compatible with standard DALI firmware update masters.
 
 ## How It Works
 
-- Polling Manchester decoder at 1200 baud (DALI standard timing)
-- Reads NVM page (0x08003FC0) for the device's short address — only accepts frames addressed to this device (or broadcast if no address assigned)
-- Uses standard DALI 16-bit forward frames with S=1 (command addressing): address byte = `(short_addr << 1) | 1`, data byte = bootloader command
-- Backward frame ACK/NAK for flow control (ACK sent per 64-byte flash page)
-- Full firmware upload (~10 KB) takes approximately **11 minutes** over the DALI bus (conservative 25ms inter-frame timing)
-- **Other devices on the bus are NOT affected** — frames are addressed to a specific short address. Only the target device processes bootloader commands. Command bytes 131–135 are in the IEC 62386-102 vendor-specific reserved range (129–143), ignored by standard DALI devices.
+- 32-bit forward frame decoder at 1200 baud (IEC 62386-101, 7.4.3)
+- Accepts IEC 62386-105 commands: START FW TRANSFER, BEGIN BLOCK, TRANSFER BLOCK DATA, FINISH FW UPDATE, RESTART FW, QUERY BLOCK FAULT, QUERY FW UPDATE RUNNING
+- **Block 0 validation**: GTIN (6 bytes) and Device key byte 0 (EVG mode ID) are compared against values stored in EEPROM by the firmware. Mismatch → QUERY BLOCK FAULT returns YES → master aborts
+- Block 1..n firmware data is extracted from the block structure (headers and CRCs skipped) and streamed to the I2C EEPROM staging area
+- On FINISH FW UPDATE (if no fault): EEPROM contents are copied to internal flash, then device auto-reboots
+- Other DALI devices on the bus are **not affected** — 32-bit frames are silently ignored per IEC 62386-101
+
+## Speed
+
+3 firmware bytes per 32-bit frame (vs 1 byte per 2 frames in the original bootloader). Expected transfer time for 10 KB firmware: **~2.5 minutes** (vs ~11 minutes with the original protocol).
 
 ## Boot Entry
 
 Two ways to enter bootloader mode:
 
-1. **Hardware**: Hold **PA1 low** during reset
-2. **Software**: Send DALI command 131 (vendor-reserved, config repeat = send 2× within 100ms) to the running firmware. The firmware writes a magic word to RAM and resets into the bootloader.
+1. **Software**: Firmware receives START FW TRANSFER (32-bit, device-addressed), responds YES, writes a magic word to RAM and resets. The bootloader detects the magic word and enters update mode immediately.
+2. **Hardware**: Hold **PA1 low** during reset. The bootloader enters update mode and responds YES to any subsequent START FW TRANSFER from the master.
 
 If neither condition is met, the bootloader jumps directly to user code.
 
@@ -28,20 +30,66 @@ If neither condition is met, the bootloader jumps directly to user code.
 
 ![Bootloader Protocol](bootloader_protocol.png)
 
-| Command | Code | Description |
-|---------|------|-------------|
-| CMD_BOOT_ENTER | 0x83 (131) | Enter bootloader, must be sent 2x in 100ms |
-| CMD_ERASE | 0x84 (132) | Erase all user flash (224 pages). ACK sent immediately, erase runs after. |
-| CMD_DATA | 0x85 (133) | Next frame's data byte is a firmware byte |
-| CMD_COMMIT | 0x86 (134) | Write remaining partial page + lock flash |
-| CMD_BOOT | 0x87 (135) | Jump to user code |
+### Phase 1 — Enter Bootloader (handled by firmware)
 
-Data transfer uses two frames per byte: the master sends CMD_DATA, then a second frame where the data byte IS the firmware byte. ACK (0x01) is sent after every 64 bytes (one flash page).
+| Frame | Direction | Description |
+|-------|-----------|-------------|
+| `[addr] [0xFB] [0x05] [0x00]` | Master → Device | QUERY FW UPDATE FEATURES (firmware responds 0x00) |
+| `[addr] [0xFB] [0x00] [0x00]` ×2 | Master → Device | START FW TRANSFER (config repeat) |
+| `0xFF` | Device → Master | YES — firmware ACKs, then resets into bootloader |
+
+### Phase 2 — Block 0 Validation (handled by bootloader)
+
+| Frame | Direction | Description |
+|-------|-----------|-------------|
+| `[0xCB] [0x00] [0x00] [0x00]` | Master → Bootloader | BEGIN BLOCK 0 (info block) |
+| `[0xBD] [d0] [d1] [d2]` ×21 | Master → Bootloader | Block 0 data — GTIN at pos 5-10, Device key at pos 0x2B validated against EEPROM |
+| `[0xBF] [0xFB] [0x08] [0x00]` | Master → Bootloader | QUERY BLOCK FAULT — silence = OK, YES = GTIN/mode mismatch |
+
+### Phase 3 — Firmware Data Transfer
+
+| Frame | Direction | Description |
+|-------|-----------|-------------|
+| `[0xCB] [blk_h] [blk_m] [blk_l]` | Master → Bootloader | BEGIN BLOCK 1..n |
+| `[0xBD] [d0] [d1] [d2]` | Master → Bootloader | TRANSFER BLOCK DATA — 3 firmware bytes per frame, no response |
+| `[0xBF] [0xFB] [0x08] [0x00]` | Master → Bootloader | QUERY BLOCK FAULT — silence = no fault |
+
+Block 1..n: bytes 0-1 = data size (s), bytes 2-14 = header (skipped), bytes 15..s+14 = firmware data (stored to EEPROM staging area at 0x0080+), bytes s+15..s+16 = trailing CRC (skipped).
+
+### Phase 4 — Commit
+
+| Frame | Direction | Description |
+|-------|-----------|-------------|
+| `[0xBF] [0xFB] [0x03] [0x00]` ×2 | Master → Bootloader | FINISH FW UPDATE (config repeat) — if no fault: copies EEPROM → flash, auto-reboots |
+| `[addr] [0xFB] [0x01] [0x00]` | Master → Bootloader | RESTART FW (if needed) — responds YES, reboots |
+
+## EEPROM Layout
+
+The AT24C256 EEPROM serves as both persistent config storage and firmware staging area. Layout is shared between firmware and bootloader (defined in `Firmware/src/eeprom/eeprom_layout.h`).
+
+```
+AT24C256 (32 KB = 0x0000–0x7FFF)
+├── 0x0000–0x003F  Device identity (64 B)
+│   ├── 0x0000  magic (4 B, "DALI" = 0x44414C49)
+│   ├── 0x0004  GTIN (6 B, MSB first)
+│   ├── 0x000A  EVG mode ID (1 B)
+│   ├── 0x000B  HW version major/minor (2 B)
+│   ├── 0x000D  FW version major/minor (2 B)
+│   └── 0x000F  short_address (1 B)
+├── 0x0040–0x007F  DALI config (64 B, same struct as dali_nvm_t)
+└── 0x0080–0x7FFF  Firmware staging area (32,640 B)
+```
+
+The identity block is written by the firmware at every boot. The bootloader reads it to:
+1. Determine the device's DALI short address (for START FW TRANSFER addressing)
+2. Validate Block 0 GTIN and Device key against the device's identity
 
 ## Pin Usage
 
 | Pin | Function | Notes |
 |-----|----------|-------|
+| PC1 | I2C SDA | AT24C256 EEPROM |
+| PC2 | I2C SCL | AT24C256 EEPROM |
 | PC3 | DALI RX | Input, floating (from PHY RX_OUT) |
 | PC4 | DALI TX | Output, push-pull (to PHY TX_IN) |
 | PA1 | Boot button | Input, pull-up, active low at reset |
@@ -53,8 +101,6 @@ The CH32V003 option bytes must be configured to boot from the bootloader area. F
 ```
 wlink flash configurebootloader.bin
 ```
-
-The `configurebootloader.bin` is from [cnlohr's ch32v003fun-usb-bootloader](https://github.com/cnlohr/ch32v003fun/tree/master/bootloader) and sets the option bytes for boot-from-bootloader mode.
 
 ## Build
 
@@ -68,38 +114,40 @@ Double-click `build.bat` or run from command line.
 wlink flash --address 0x1FFFF000 dali_bootloader.bin
 ```
 
-## Upload Firmware via DALI
+## Resource Usage
 
-Use `dali_upload.ps1` with a Pico DALI master connected via serial:
+| Resource | Value |
+|----------|-------|
+| Flash | 1,876 B / 1,920 B (97.7%) |
+| RAM | ~150 B (stack + variables) |
+| I2C | I2C1, 100 kHz, AT24C256 at address 0x50 |
 
-```powershell
-.\dali_upload.ps1 -Addr broadcast -MasterPort COM9 -SlavePort COM11
-```
+## Comparison with Original Bootloader
 
-The script enters the bootloader (cmd 131), erases flash, uploads the firmware binary byte-by-byte, commits, and boots. Requires the Pico master's `querybc` command for backward frame (ACK) detection.
-
-## Known Issues / Limitations
-
-- Only tested with a custom Pico bitbang DALI master. Not validated against commercial DALI infrastructure.
-- Upload speed is inherently slow (~11 min for 10 KB) due to DALI's 1200 baud rate and conservative inter-frame timing. Could be reduced to ~6 min by tightening the 25ms sleep in the upload script.
-
-## Verified Upload Results
-
-Tested 2026-03-10: 9856 bytes (154 pages), all pages ACK'd, firmware booted successfully after CMD_BOOT. Upload time: 665s (14.8 B/s). Flash contents verified correct via `wlink dump`.
+| Feature | Original (DALI_Bootloader) | IEC 62386-105 (this) |
+|---------|---------------------------|----------------------|
+| Frame format | 16-bit standard | 32-bit reserved forward |
+| Data rate | 1 byte per 2 frames | 3 bytes per frame |
+| Transfer time (10 KB) | ~11 min | ~2.5 min |
+| Protocol | Vendor-specific (cmd 131-135) | IEC 62386-105 standard |
+| Storage | EEPROM staging → flash | EEPROM staging → flash |
+| Block 0 validation | None | GTIN + EVG mode ID |
+| Flash safety | Flash untouched until commit | Flash untouched until commit |
+| Standard master compatible | No (custom tool only) | Yes |
+| Boot size | 1,616 B (84%) | 1,876 B (97.7%) |
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `dali_bootloader.c` | Main bootloader source (Manchester RX/TX, flash programming, protocol) |
-| `startup.S` | Minimal startup (vector table, stack init, BSS zero, jump to main) |
-| `funconfig.h` | ch32v003fun config (no debug printf, SysTick at HCLK) |
+| `dali_bootloader_105.c` | Main bootloader source |
+| `startup.S` | Minimal startup (vector table, stack init, BSS zero) |
+| `funconfig.h` | ch32v003fun config |
 | `build.bat` | Build script using PlatformIO toolchain |
 | `bootloader.ld` | Linker script (boot area: 0x00000000, 1920 bytes) |
-| `ch32v003fun/` | Dependencies: `ch32v003fun.h` + `libgcc.a` (self-contained, no USB_Bootloader dependency) |
-| `dali_bootloader.bin` | Pre-built binary (~1064 bytes) |
-| `configurebootloader.bin` | Option bytes configurator (from cnlohr, run once per chip) |
+| `ch32v003fun/` | Dependencies: `ch32v003fun.h` + `libgcc.a` |
+| `dali_bootloader.bin` | Pre-built binary (~1876 bytes) |
+| `configurebootloader.bin` | Option bytes configurator (run once per chip) |
 | `flash.bat` | Flash bootloader to boot area via WCH-LinkE |
-| `dali_upload.ps1` | PowerShell upload script for firmware over DALI bus |
-| `bootloader_protocol.png` | Protocol flowchart (rendered from `.mmd` source) |
-| `bootloader_protocol.mmd` | Mermaid source for protocol flowchart |
+| `bootloader_protocol.mmd` | Protocol sequence diagram (Mermaid source) |
+| `bootloader_protocol.png` | Rendered protocol diagram |

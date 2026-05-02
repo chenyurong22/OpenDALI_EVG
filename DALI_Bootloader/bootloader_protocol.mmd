@@ -10,32 +10,73 @@
 }}}%%
 sequenceDiagram
     participant M as DALI Master
+    participant F as Firmware (CH32V003)
     participant B as Bootloader (CH32V003)
+    participant E as I2C EEPROM (AT24C256)
     participant O as Other DALI Devices
 
-    Note over M,O: All frames use standard DALI 16-bit forward frames (S=1)
-    Note right of O: Cmd bytes 131-135 are<br/>vendor-specific reserved (129-143)
+    Note over M,O: All 32-bit frames per IEC 62386-101, 7.4.3 — ignored by other devices
+    Note right of O: QUERY FW UPDATE FEATURES<br/>handled by firmware.<br/>All other IEC 62386-105<br/>commands by bootloader.
 
-    M->>B: CMD 131 x2 (enter bootloader, config repeat)
-    Note right of B: Firmware writes RAM magic,<br/>resets into bootloader
-
-    M->>B: CMD_ERASE (0x84)
-    B-->>M: ACK (0x01)
-    Note right of B: Erases user flash (~1s,<br/>ACK sent before erase)
-
-    rect rgba(219, 234, 254, 0.3)
-        loop For each firmware byte (2 frames per byte)
-            M->>B: CMD_DATA (0x85)
-            M->>B: Data byte frame (addr | byte)
-        end
-        Note right of B: Every 64 bytes (page full):<br/>writes page to flash
-        B-->>M: ACK (0x01) per page
+    rect rgba(255, 243, 224, 0.3)
+        Note over M,F: Phase 1 — Enter bootloader (firmware)
+        M->>F: QUERY FW UPDATE FEATURES: [addr] [0xFB] [0x05] [0x00]
+        F-->>M: 0x00 (cancel not supported)
+        M->>F: START FW TRANSFER: [addr] [0xFB] [0x00] [0x00] (×2, config repeat)
+        F-->>M: YES (0xFF)
+        Note right of F: Writes magic word to RAM,<br/>triggers system reset
+        F->>B: Reset → bootloader starts
+        Note right of B: Detects magic word →<br/>update mode enabled
+        B->>E: Read identity block (GTIN, EVG mode, short addr)
+        E-->>B: 16 bytes
+        Note right of B: Stores GTIN + EVG mode<br/>for Block 0 validation
     end
 
-    M->>B: CMD_COMMIT (0x86)
-    B-->>M: ACK (0x01)
-    Note right of B: Writes partial page,<br/>locks flash
+    rect rgba(255, 230, 230, 0.3)
+        Note over M,E: Phase 2 — Block 0 validation
+        M->>B: BEGIN BLOCK 0: [0xCB] [0x00] [0x00] [0x00]
 
-    M->>B: CMD_BOOT (0x87)
-    B-->>M: ACK (0x01)
-    Note right of B: Jumps to user code
+        loop TRANSFER BLOCK DATA for block 0 (61 bytes)
+            M->>B: [0xBD] [byte] [byte] [byte]
+            Note right of B: Validate GTIN (pos 5-10)<br/>and Device key (pos 0x2B)<br/>against EEPROM identity
+        end
+
+        M->>B: QUERY BLOCK FAULT: [0xBF] [0xFB] [0x08] [0x00]
+
+        alt GTIN or EVG mode mismatch
+            B-->>M: YES (0xFF) — block fault
+            Note over M: Wrong device! Abort update.
+        else Match OK
+            Note right of B: Silence = no fault
+        end
+    end
+
+    rect rgba(219, 234, 254, 0.3)
+        Note over M,E: Phase 3 — Firmware data transfer (3 bytes/frame, no response)
+        M->>B: BEGIN BLOCK 1: [0xCB] [0x00] [0x00] [0x01]
+
+        loop TRANSFER BLOCK DATA for block 1..n
+            M->>B: [0xBD] [byte] [byte] [byte]
+            Note right of B: Skip header (bytes 2-14)<br/>Store firmware data<br/>(bytes 15..s+14)
+            B->>E: Flush to EEPROM every 64 bytes (staging area 0x0080+)
+        end
+
+        M->>B: QUERY BLOCK FAULT: [0xBF] [0xFB] [0x08] [0x00]
+        Note right of B: Silence = no fault
+    end
+
+    rect rgba(220, 252, 231, 0.3)
+        Note over M,E: Phase 4 — Commit and auto-reboot
+        M->>B: FINISH FW UPDATE: [0xBF] [0xFB] [0x03] [0x00] (×2, config repeat)
+        Note right of B: Flush remaining bytes to EEPROM
+
+        Note over B,E: Copy EEPROM → Internal Flash
+        Note right of B: Erase all user flash pages
+        loop For each 64-byte page
+            B->>E: Read page from EEPROM (0x0080+)
+            E-->>B: 64 bytes
+            Note right of B: Write to internal flash
+        end
+        Note right of B: Lock flash, auto-reboot
+        Note right of B: Silence = success
+    end

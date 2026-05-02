@@ -8,15 +8,15 @@
     │             │       │  TX_IN  ─┼───────┤ PC4 (TX, GPIO)   │
     │             │       │  GND ────┼───────┤ GND              │
     └─────────────┘       └──────────┘       │ PC6 (TIM1_CH1) ──┤── LED1 / WS2812
-    TIM1 Partial Remap 1 (RM=01):             │ PC7 (TIM1_CH2) ──┤── LED2 (PWM)
+    TIM1 Partial Remap 1 (RM=01):            │ PC7 (TIM1_CH2) ──┤── LED2 (PWM)
       CH1=PC6  CH2=PC7  CH3=PC0  CH4=PD3     │ PC0 (TIM1_CH3) ──┤── LED3 (PWM)
-                                              │ PD3 (TIM1_CH4) ──┤── LED4 (PWM)
+                                             │ PD3 (TIM1_CH4) ──┤── LED4 (PWM)
     PC6 dual-use: TIM1_CH1 (PWM modes)       │ PA2 (GPIO) ──────┤── PSU_CTRL
-                  SPI1_MOSI (WS2812 modes)    │ PC1 (I2C1_SDA) ──┤── (EEPROM)
-                                              │ PC2 (I2C1_SCL) ──┤── (EEPROM)
-                                              │ PC5 ─────────────┤── (spare)
-                                              │ PD5 (USART1_TX) ─┤── Debug TX
-                                              │ PD6 (USART1_RX) ─┤── Debug RX
+                  SPI1_MOSI (WS2812 modes)   │ PC1 (I2C1_SDA) ──┤── (EEPROM)
+                                             │ PC2 (I2C1_SCL) ──┤── (EEPROM)
+                                             │ PC5 ─────────────┤── (spare)
+                                             │ PD5 (USART1_TX) ─┤── Debug TX
+                                             │ PD6 (USART1_RX) ─┤── Debug RX
                                               └──────────────────┘
 
     Bus polarity (with PHY transceiver):
@@ -78,6 +78,7 @@
 #if defined(EVG_MODE_ONOFF)
   #define EVG_MODE_NAME       "ONOFF"
   #define EVG_MODE_SERIAL     0x4F4E4F4646000000ULL  /* "ONOFF\0\0\0" */
+  #define EVG_MODE_ID         0x01
   #define DALI_DEVICE_TYPE    6
   #define PWM_NUM_CHANNELS    0
   #define EVG_NUM_COLOURS     1
@@ -89,6 +90,7 @@
 #elif defined(EVG_MODE_SINGLE)
   #define EVG_MODE_NAME       "SINGLE"
   #define EVG_MODE_SERIAL     0x53494E474C450000ULL  /* "SINGLE\0\0" */
+  #define EVG_MODE_ID         0x02
   #define DALI_DEVICE_TYPE    6
   #define PWM_NUM_CHANNELS    1
   #define EVG_NUM_COLOURS     1
@@ -99,6 +101,7 @@
 #elif defined(EVG_MODE_CCT)
   #define EVG_MODE_NAME       "CCT"
   #define EVG_MODE_SERIAL     0x4343540000000000ULL  /* "CCT\0\0\0\0\0" */
+  #define EVG_MODE_ID         0x03
   #define DALI_DEVICE_TYPE    8
   #define PWM_NUM_CHANNELS    2
   #define EVG_NUM_COLOURS     2
@@ -109,6 +112,7 @@
 #elif defined(EVG_MODE_RGB)
   #define EVG_MODE_NAME       "RGB"
   #define EVG_MODE_SERIAL     0x5247420000000000ULL  /* "RGB\0\0\0\0\0" */
+  #define EVG_MODE_ID         0x04
   #define DALI_DEVICE_TYPE    8
   #define PWM_NUM_CHANNELS    3
   #define EVG_NUM_COLOURS     3
@@ -119,6 +123,7 @@
 #elif defined(EVG_MODE_RGBW)
   #define EVG_MODE_NAME       "RGBW"
   #define EVG_MODE_SERIAL     0x5247425700000000ULL  /* "RGBW\0\0\0\0" */
+  #define EVG_MODE_ID         0x05
   #define DALI_DEVICE_TYPE    8
   #define PWM_NUM_CHANNELS    4
   #define EVG_NUM_COLOURS     4
@@ -129,6 +134,7 @@
 #elif defined(EVG_MODE_WS2812)
   #define EVG_MODE_NAME       "WS2812"
   #define EVG_MODE_SERIAL     0x5753323831320000ULL  /* "WS2812\0\0" */
+  #define EVG_MODE_ID         0x06
   #define DALI_DEVICE_TYPE    8
   #define DIGITAL_LED_OUT
   #define WS2812_TYPE         WS2812_TYPE_WS2812
@@ -140,6 +146,7 @@
 #elif defined(EVG_MODE_SK6812_RGB)
   #define EVG_MODE_NAME       "SK6812_RGB"
   #define EVG_MODE_SERIAL     0x534B363852474200ULL  /* "SK68RGB\0" */
+  #define EVG_MODE_ID         0x07
   #define DALI_DEVICE_TYPE    8
   #define DIGITAL_LED_OUT
   #define WS2812_TYPE         WS2812_TYPE_WS2812  /* same 3-byte GRB protocol */
@@ -151,6 +158,7 @@
 #elif defined(EVG_MODE_SK6812_RGBW)
   #define EVG_MODE_NAME       "SK6812_RGBW"
   #define EVG_MODE_SERIAL     0x534B363852474257ULL  /* "SK68RGBW" */
+  #define EVG_MODE_ID         0x08
   #define DALI_DEVICE_TYPE    8
   #define DIGITAL_LED_OUT
   #define WS2812_TYPE         WS2812_TYPE_SK6812_RGBW
