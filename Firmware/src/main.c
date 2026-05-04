@@ -30,6 +30,7 @@
 #include "ch32fun.h"
 #include <stdio.h>
 #include "config/hardware.h"
+#include "logger.h"
 #include "dali/phy/dali_phy.h"
 #include "dali/protocol/dali_protocol.h"
 #include "dali/protocol/dali_fade.h"
@@ -51,10 +52,15 @@ static volatile uint32_t ms_ticks = 0;
 
 /* SysTick ISR — fires every 1 ms, increments the global tick counter.
  * __attribute__((interrupt)) is required on CH32V003 for correct
- * RISC-V hardware stacking (mret vs ret). */
+ * RISC-V hardware stacking (mret vs ret).
+ *
+ * Without auto-reload, we must advance CMP by the period each tick
+ * so the next compare match fires 1 ms later. The CNT register is
+ * free-running (never resets), so CMP accumulates. */
 void SysTick_Handler(void) __attribute__((interrupt));
 void SysTick_Handler(void) {
     SysTick->SR = 0;        /* Clear the compare-match flag */
+    SysTick->CMP += (FUNCONF_SYSTEM_CORE_CLOCK / 8 / 1000);  /* Next match in 6000 ticks */
     ms_ticks++;
 }
 
@@ -65,12 +71,31 @@ uint32_t millis(void) {
 }
 
 /* Configure SysTick for 1 ms interrupts.
- * CTLR = 0xF enables: counter, interrupt, HCLK source, auto-reload. */
+ * Uses auto-reload mode (STRE=1) with HCLK/8 source to stay compatible
+ * with ch32fun's DelaySysTick/Delay_Ms which expects a free-running
+ * HCLK/8 counter.
+ *
+ * CTLR bits: 0=STE(enable), 1=STIE(irq), 2=STCLK(0=HCLK/8), 3=STRE(auto-reload)
+ * HCLK/8 = 6 MHz → CMP = 5999 for 1 ms period.
+ *
+ * NOTE: We must NOT set STCLK=1 (HCLK) here because FUNCONF_SYSTICK_USE_HCLK
+ * is 0 (default), so Delay_Ms() computes tick counts assuming HCLK/8 = 6 MHz.
+ * Setting STCLK=1 would make the counter run 8x faster than Delay_Ms expects.
+ *
+ * Auto-reload (STRE=1) is safe because CMP = 5999 and Delay_Ms(5) needs
+ * only 30000 ticks which exceeds the CMP reload boundary. We must therefore
+ * NOT use auto-reload — it would wrap CNT at 5999, breaking DelaySysTick
+ * for any delay > 1 ms.
+ *
+ * Solution: Use HCLK/8 free-running counter (STRE=0, STCLK=0) with compare
+ * interrupt. CNT counts 0→2^32, CMP triggers IRQ every 6000 ticks, but we
+ * must update CMP each ISR to fire again (since no auto-reload).
+ */
 static void millis_init(void) {
-    SysTick->CMP  = (FUNCONF_SYSTEM_CORE_CLOCK / 1000) - 1;  /* 48MHz / 1000 - 1 = 47999 */
-    SysTick->CNT  = 0;             /* Reset counter */
+    SysTick->CNT  = 0;
+    SysTick->CMP  = (FUNCONF_SYSTEM_CORE_CLOCK / 8 / 1000) - 1;  /* 6MHz / 1000 - 1 = 5999 */
     SysTick->SR   = 0;             /* Clear pending flag */
-    SysTick->CTLR = 0xF;           /* Enable counter + interrupt + HCLK + auto-reload */
+    SysTick->CTLR = 0x3;           /* STE + STIE, HCLK/8, no auto-reload */
     NVIC_EnableIRQ(SysTick_IRQn);
 }
 
@@ -132,8 +157,9 @@ static void usb_enum_init(void) {
  * ==================================================================== */
 static void on_level(uint8_t level) {
     led_driver_apply(level, dali_protocol_get_colour_actual());
-    psu_ctrl_set(level > 0);
-    printf("LVL=%d\n", level);
+    uint8_t psu = (level > 0);
+    psu_ctrl_set(psu);
+    printf("LVL=%d PSU=%d\n", level, psu);
 }
 
 /* ====================================================================
@@ -225,6 +251,10 @@ int main(void) {
     dali_protocol_power_on();
 
     /* Print boot message with mode info (visible on debug serial PD5) */
+    if (ds.short_address <= 63)
+        printf("ADDR=%d\n", ds.short_address);
+    else
+        printf("ADDR=none\n");
 #ifdef ONOFF_MODE
     printf("DALI %s DT%d ON/OFF ready\n", EVG_MODE_NAME, DALI_DEVICE_TYPE);
 #elif defined(DIGITAL_LED_OUT)
@@ -252,7 +282,7 @@ int main(void) {
          * is pulling the line active while we drove idle (IEC 62386-101 §8.2.4.4).
          * Only functional with a real DALI PHY transceiver (open-drain bus). */
         if (dali_phy_consume_collision())
-            printf("COLLISION\n");
+            LOG_PHY("COLLISION");
 
         /* Periodically re-send LED data to recover from electrical glitches.
          * For PWM mode this is a no-op (TIM1 hardware maintains duty cycle).

@@ -104,12 +104,12 @@
 #define DALI_CMD_DTR_AS_SYS_FAIL   45  /* Store DTR0 as systemFailureLevel */
 #define DALI_CMD_DTR_AS_FADE_TIME   46  /* Store DTR0 as fadeTime (0–15) */
 #define DALI_CMD_DTR_AS_FADE_RATE   47  /* Store DTR0 as fadeRate (1–15) */
-#define DALI_CMD_DTR_AS_SHORT_ADDR  48  /* Store DTR0 as short address */
+#define DALI_CMD_DTR_AS_SHORT_ADDR  128 /* Store DTR0 as short address (IEC 62386-102 cmd 128) */
 #define DALI_CMD_STORE_SCENE_BASE   64  /* 64–79: Store DTR0 as scene 0–15 level */
 #define DALI_CMD_REMOVE_SCENE_BASE  80  /* 80–95: Remove from scene 0–15 */
 #define DALI_CMD_ADD_GROUP_BASE     96  /* 96–111: Add to group 0–15 */
 #define DALI_CMD_REMOVE_GROUP_BASE  112 /* 112–127: Remove from group 0–15 */
-#define DALI_CMD_DTR_AS_EXT_FADE   128 /* Store DTR0 as extended fade time (DALI-2) */
+#define DALI_CMD_ENABLE_WRITE_MEM  129 /* Enable write memory (IEC 62386-102 cmd 129) */
 #define DALI_CMD_ENTER_BOOTLOADER  131 /* Vendor: reboot into DALI bootloader (config repeat) */
 
 /* Query commands (144–255) — verified against IEC 62386-102 / OpenKNX Commands.h */
@@ -133,12 +133,12 @@
 #define DALI_CMD_QUERY_SYS_FAIL    164 /* Returns systemFailureLevel */
 #define DALI_CMD_QUERY_FADE_SPEEDS  165 /* Returns (fadeTime<<4)|fadeRate */
 #define DALI_CMD_QUERY_SCENE_BASE   176 /* 176–191: Returns scene 0–15 level */
+#define DALI_CMD_QUERY_GROUPS_0_7   192 /* Returns group membership bits 0–7 (IEC 62386-102 cmd 192) */
+#define DALI_CMD_QUERY_GROUPS_8_15  193 /* Returns group membership bits 8–15 (IEC 62386-102 cmd 193) */
 #define DALI_CMD_QUERY_RANDOM_H     194 /* Returns randomAddress byte H */
 #define DALI_CMD_QUERY_RANDOM_M     195 /* Returns randomAddress byte M */
 #define DALI_CMD_QUERY_RANDOM_L     196 /* Returns randomAddress byte L */
 #define DALI_CMD_READ_MEMORY        197 /* Read byte at DTR2:DTR1 from memory bank, post-increments DTR1 */
-#define DALI_CMD_QUERY_GROUPS_0_7   198 /* Returns group membership bits 0–7 */
-#define DALI_CMD_QUERY_GROUPS_8_15  199 /* Returns group membership bits 8–15 */
 
 /* ── DT8 extended commands (IEC 62386-209, device type 8) ──────────
  * These are "application extended commands" (cmd 224–254), only
@@ -150,8 +150,8 @@
 #define DALI_DT8_SET_TEMP_COLOUR_TEMP       231 /* Tc in mirek from DTR1:DTR0 */
 #define DALI_DT8_STEP_COOLER                232 /* Decrease mirek (increase K) */
 #define DALI_DT8_STEP_WARMER                233 /* Increase mirek (decrease K) */
-#define DALI_DT8_SET_TEMP_RGB_LEVEL         235 /* R=DTR2, G=DTR1, B=DTR0 */
-#define DALI_DT8_SET_TEMP_WAF_LEVEL         236 /* W=DTR2, A=DTR1, F=DTR0 */
+#define DALI_DT8_SET_TEMP_RGB_LEVEL         235 /* R=DTR0, G=DTR1, B=DTR2 */
+#define DALI_DT8_SET_TEMP_WAF_LEVEL         236 /* W=DTR0, A=DTR1, F=DTR2 */
 #define DALI_DT8_COPY_REPORT_TO_TEMP        238 /* Copy actual → temp colour */
 
 /* DT8 query commands (247–252) */

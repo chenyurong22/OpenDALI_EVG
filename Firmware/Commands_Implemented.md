@@ -12,9 +12,8 @@ Implements IEC 62386-101, IEC 62386-102, and IEC 62386-209 (DT8).
 | Backward frame TX (8-bit) | Done | TIM2 output compare, settle 7-22 Te |
 | Noise filter | Done | Edges < 200 us ignored |
 | Idle timeout (frame complete) | Done | 5 Te, TIM2 CH4 output compare |
-| PHY mode (default) | Done | Normal polarity for DALI transceiver (TX: HIGH=active, RX: HIGH=active) |
-| DALI_NO_PHY mode | Done | Direct GPIO, inverted polarity (TX: LOW=active, RX: LOW=active). Optional, disabled by default. |
-| Bus collision detection (TX echo check) | Done | TX ISR samples bus each Te via PHY readback, aborts on mismatch within 1 Te. Collision logged via `printf("COLLISION")` and flag readable via `dali_tx_consume_collision()`. Requires PHY (open-drain bus). |
+| PHY transceiver mode | Done | TX: HIGH=active, RX: LOW=active (PHY inverts). Requires DALI PHY transceiver. |
+| Bus collision detection (TX echo check) | Done | TX ISR samples bus each Te via PHY readback, aborts on mismatch within 1 Te. Collision logged via `printf("COLLISION")` and flag readable via `dali_phy_consume_collision()`. |
 | Structured frame type | Done | `dali_frame_t { data, size, flags, timestamp }` with FORWARD / BACKWARD / ERROR / COLLISION / ECHO flags (`dali_frame.h`) |
 
 ## IEC 62386-102 — Immediate Action Commands (0-15)
@@ -171,8 +170,8 @@ All config commands require config repeat (2x within 100 ms).
 | 231 | SET TEMPORARY COLOUR TEMPERATURE | Done | Mirek from DTR1:DTR0 |
 | 232 | STEP COOLER | Done | -10 mirek (toward 6500K) |
 | 233 | STEP WARMER | Done | +10 mirek (toward 2700K) |
-| 235 | SET TEMPORARY RGB LEVEL | Done | R=DTR2, G=DTR1, B=DTR0 |
-| 236 | SET TEMPORARY WAF LEVEL | Done | W=DTR2 (A, F ignored) |
+| 235 | SET TEMPORARY RGB LEVEL | Done | R=DTR0, G=DTR1, B=DTR2 (per IEC 62386-209) |
+| 236 | SET TEMPORARY WAF LEVEL | Done | W=DTR0 (A, F ignored) |
 | 238 | COPY REPORT TO TEMPORARY | Done | Copy actual -> temp |
 
 ### DT8 Query Commands
@@ -218,7 +217,6 @@ Bank-write commands (ENABLE WRITE MEMORY, WRITE MEMORY LOCATION 0xC7/0xC9) are n
 | QUERY POWER FAILURE (157) | DALI-2, no HW monitoring |
 | CIE xy chromaticity | Requires spectral calibration per LED |
 | Tc temperature limits | Not implemented |
-| Bus collision detection on direct GPIO (`DALI_NO_PHY`) | TX echo check cannot detect collisions on push-pull GPIO; use PHY mode (default) |
 | Memory bank 1 + write access | Requires r/w storage strategy and lock/unlock state machine |
 | Extended fade time | Done — used when fadeTime=0 (up to ~16 min fades) |
 
@@ -226,11 +224,11 @@ Bank-write commands (ENABLE WRITE MEMORY, WRITE MEMORY LOCATION 0xC7/0xC9) are n
 
 | Resource | RGBW | ONOFF |
 |----------|------|-------|
-| Flash | 9,668 B (59.0% of 16 KB) | — |
+| Flash | 10,588 B (64.6% of 16 KB) | — |
 | RAM | 136 B (6.6% of 2 KB) | — |
-| NVM page | 64 B at 0x08003FC0 (last flash page) |
+| NVM | AT24C256 I2C EEPROM: identity (64 B) + config (64 B) + firmware staging (32,640 B) |
 | TIM1 | PWM (4 channels, 20 kHz) |
 | TIM2 | DALI timing (1 MHz free-running) |
-| EXTI0 | DALI RX (PC0, both edges) |
+| EXTI3 | DALI RX (PC3, both edges) |
 | SysTick | millis() (1 ms tick) |
 | USART1 | Debug printf (PD5, 115200 baud) |

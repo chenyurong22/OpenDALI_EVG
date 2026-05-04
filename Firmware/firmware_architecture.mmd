@@ -44,13 +44,13 @@ flowchart LR
     style STATE fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
 
     %% ── Persistence ──
-    subgraph NVM ["dali/nvm/"]
+    subgraph NVM ["dali/nvm/ + eeprom/"]
         direction TB
-        FLASH[("Flash NVM\n64B page\n0x08003FC0")]
+        EEPROM[("I2C EEPROM\nAT24C256\nidentity + config\n+ FW staging")]
         BANK0["Bank 0\nread-only\nGTIN · versions"]
     end
     style NVM fill:#fff8e1,stroke:#d6b656
-    style FLASH fill:#fff2cc,stroke:#d6b656
+    style EEPROM fill:#fff2cc,stroke:#d6b656
     style BANK0 fill:#fff2cc,stroke:#d6b656
 
     %% ── Output ──
@@ -93,9 +93,9 @@ flowchart LR
     CONFIG -..-> STATE
 
     %% Config → NVM
-    CONFIG -. "dirty" .-> FLASH
-    ADDR -. "dirty" .-> FLASH
-    FLASH -. "boot\nrestore" ..-> STATE
+    CONFIG -. "dirty" .-> EEPROM
+    ADDR -. "dirty" .-> EEPROM
+    EEPROM -. "boot\nrestore" ..-> STATE
     QUERY -.-> BANK0
 
     %% Protocol → Output

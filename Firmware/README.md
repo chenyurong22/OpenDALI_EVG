@@ -57,14 +57,13 @@ Default: `EVG_MODE_RGBW`. ONOFF mode compiles out all LED drivers, log table, an
 | NVM persistence via I2C EEPROM (AT24C256, all config + colour + identity) | Working |
 | PSU control output (PA2, auto on/off) | Working |
 | WS2812/SK6812 digital LED strip output (SPI1+DMA) | Untested |
-| DALI PHY transceiver mode (default) and direct GPIO mode (`DALI_NO_PHY`) | Working |
+| DALI PHY transceiver mode (TX/RX with collision detection) | Working |
 | IEC 62386-105 START FW TRANSFER (32-bit frame) → bootloader entry | Working |
 
 ## What Doesn't Work / Not Implemented
 
 | Area | Reason |
 |------|--------|
-| Bus collision detection on direct GPIO (`DALI_NO_PHY`) | TX echo check cannot detect collisions on push-pull GPIO; use PHY mode (default) for collision detection |
 | Memory bank 1 + write access | Read-only bank 0 only; writable banks not implemented |
 | DALI-2 diagnostic queries (166-175) | Require hardware monitoring circuitry (current/voltage sensing) |
 | CIE xy chromaticity | Requires per-LED spectral calibration |

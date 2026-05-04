@@ -3,11 +3,14 @@
 
     32 KB EEPROM on I2C1 (PC1=SDA, PC2=SCL), address 0x50.
     64-byte page write, 5 ms write cycle, 1 MHz I2C capable.
+    All operations have I2C timeouts — never hangs on bus errors.
 
     Usage:
         eeprom_init();                          // once at startup
-        eeprom_write(0x0000, data, 8);          // write up to 64 bytes
-        eeprom_read(0x0000, buf, 8);            // sequential read
+        if (!eeprom_write(0x0000, data, 8))     // write up to 64 bytes
+            handle_error();
+        if (!eeprom_read(0x0000, buf, 8))       // sequential read
+            handle_error();
 */
 #ifndef _EEPROM_H
 #define _EEPROM_H
@@ -22,10 +25,12 @@
 void eeprom_init(void);
 
 /* Write up to 64 bytes. Must not cross a 64-byte page boundary.
- * Blocks for 5 ms write cycle after completion. */
-void eeprom_write(uint16_t addr, const uint8_t *data, uint8_t len);
+ * Blocks for 5 ms write cycle after completion.
+ * Returns 1 on success, 0 on I2C timeout (bus reset performed). */
+int eeprom_write(uint16_t addr, const uint8_t *data, uint8_t len);
 
-/* Sequential read of len bytes starting at addr. */
-void eeprom_read(uint16_t addr, uint8_t *buf, uint8_t len);
+/* Sequential read of len bytes starting at addr.
+ * Returns 1 on success, 0 on I2C timeout (bus reset performed). */
+int eeprom_read(uint16_t addr, uint8_t *buf, uint8_t len);
 
 #endif /* _EEPROM_H */

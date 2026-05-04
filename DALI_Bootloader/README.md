@@ -21,10 +21,12 @@ Firmware-over-DALI-bus bootloader using 32-bit forward frames as specified in IE
 
 Two ways to enter bootloader mode:
 
-1. **Software**: Firmware receives START FW TRANSFER (32-bit, device-addressed), responds YES, writes a magic word to RAM and resets. The bootloader detects the magic word and enters update mode immediately.
+1. **Software**: Firmware receives START FW TRANSFER (32-bit, device-addressed), responds YES, sets `FLASH->STATR` bit 14 via the WCH `SystemReset_StartMode` sequence, and resets. The bootloader checks bit 14 on startup and enters update mode if set. Bit 14 is cleared immediately after reading (one-shot).
 2. **Hardware**: Hold **PA1 low** during reset. The bootloader enters update mode and responds YES to any subsequent START FW TRANSFER from the master.
 
 If neither condition is met, the bootloader jumps directly to user code.
+
+**Note**: RAM magic words do NOT survive PFIC system reset on CH32V003. The `FLASH->STATR` bit 14 approach is used instead (same mechanism as the LED-Snowflake USB bootloader). Requires `configurebootloader.bin` option bytes to be set for boot-from-bootloader mode.
 
 ## Protocol
 
@@ -118,9 +120,39 @@ wlink flash --address 0x1FFFF000 dali_bootloader.bin
 
 | Resource | Value |
 |----------|-------|
-| Flash | 1,876 B / 1,920 B (97.7%) |
+| Flash | 1,908 B / 1,920 B (99.4%) |
 | RAM | ~150 B (stack + variables) |
 | I2C | I2C1, 100 kHz, AT24C256 at address 0x50 |
+
+## Important: TX Polarity (PHY Mode)
+
+With a DALI PHY transceiver: **TX HIGH = bus active (mark), TX LOW = bus idle (space)**. The bootloader must initialize PC4 to LOW (idle) and use the correct Manchester encoding:
+- `tx_active()` = GPIO HIGH = PHY pulls bus to 0V
+- `tx_idle()` = GPIO LOW = PHY releases bus
+
+The firmware's `dali_phy.c` uses the same convention (`BSHR` = active, `BCR` = idle).
+
+## Debug Bootloader
+
+`dali_bootloader_debug.c` is a diagnostic version with UART output (PD5, 115200 baud at 24 MHz HSI). It implements the full IEC 62386-105 command dispatch but **discards firmware data** instead of writing to EEPROM. Useful for:
+
+- Verifying the DALI frame RX/TX round-trip
+- Testing the update protocol from a master (gateway/C# app)
+- Debugging boot entry, Block 0 validation, and command flow
+
+Build with the same `build.bat` toolchain, replacing the `.c` file:
+```
+riscv-wch-elf-gcc ... dali_bootloader_debug.c ...
+```
+
+UART output key:
+- `STAY` / `EXIT` — boot decision (FLASH->STATR bit 14)
+- `EE ok` / `EE!` — EEPROM identity read result
+- `B0`, `B1` — BEGIN BLOCK received
+- `.` / `!` — QUERY BLOCK FAULT response (ok / fault)
+- `OK <n>B` — FINISH FW UPDATE, n firmware bytes received
+- `S` — START FW TRANSFER → YES
+- `R` — RESTART FW → reboot
 
 ## Comparison with Original Bootloader
 

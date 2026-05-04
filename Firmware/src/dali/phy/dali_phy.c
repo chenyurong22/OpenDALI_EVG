@@ -63,29 +63,19 @@ static volatile uint8_t     tx_last_active = 0;
 static volatile uint8_t     tx_collision_flag = 0;
 
 /* ================================================================== *
- *  TX PIN HELPERS — polarity depends on DALI_NO_PHY                   *
+ *  TX/RX PIN HELPERS — PHY transceiver polarity                       *
+ *  TX: HIGH = pull bus active (mark), LOW = release bus (idle)         *
+ *  RX: LOW = bus active (PHY inverts), HIGH = bus idle                 *
  * ================================================================== */
-#ifdef DALI_NO_PHY
 static inline void tx_bus_active(void) {
-    DALI_TX_PORT->BCR = (1 << DALI_TX_PIN_N);
+    DALI_TX_PORT->BSHR = (1 << DALI_TX_PIN_N);
 }
 static inline void tx_bus_idle(void) {
-    DALI_TX_PORT->BSHR = (1 << DALI_TX_PIN_N);
+    DALI_TX_PORT->BCR = (1 << DALI_TX_PIN_N);
 }
 static inline uint8_t rx_bus_is_active(void) {
     return !(DALI_RX_PORT->INDR & (1 << DALI_RX_PIN_N));
 }
-#else
-static inline void tx_bus_active(void) {
-    DALI_TX_PORT->BSHR = (1 << DALI_TX_PIN_N);
-}
-static inline void tx_bus_idle(void) {
-    DALI_TX_PORT->BCR = (1 << DALI_TX_PIN_N);
-}
-static inline uint8_t rx_bus_is_active(void) {
-    return !!(DALI_RX_PORT->INDR & (1 << DALI_RX_PIN_N));
-}
-#endif
 
 static inline void tx_drive_active(void) { tx_bus_active(); tx_last_active = 1; }
 static inline void tx_drive_idle(void)   { tx_bus_idle();   tx_last_active = 0; }

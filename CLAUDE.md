@@ -9,7 +9,7 @@ DALI-2 control gear (slave) firmware for CH32V003F4U6, using cnlohr's ch32fun fr
 ```
 src/
 ├── funconfig.h          # ch32fun framework config (clock, UART)
-├── hardware.h           # Pin definitions, channel count, DALI PHY/NO_PHY switch, EVG mode selection
+├── hardware.h           # Pin definitions, channel count, EVG mode selection
 ├── dali_physical.h      # Manchester timing, command numbers, fade/DT8 tables
 ├── dali_frame.h         # dali_frame_t value type + FORWARD/BACKWARD/ERROR/COLLISION/ECHO flags
 ├── dali_state.h         # Shared device state struct (dali_device_state_t) + helpers
@@ -51,22 +51,25 @@ Derived defines (do not set manually): `DALI_DEVICE_TYPE`, `PWM_NUM_CHANNELS`, `
 
 | Define | Default | Description |
 |--------|---------|-------------|
-| `DALI_NO_PHY` | **not** defined | Define for direct GPIO connection (no DALI transceiver). Default: PHY mode. |
 | `WS2812_NUM_LEDS` | 30 | Number of LEDs in addressable strip (digital modes only). |
 | `PSU_CTRL_PORT/PIN_N` | PA2 | GPIO output: HIGH when any channel is on, LOW when all off. |
 
-### TIM1 PWM Channel Mapping (default, no AFIO remap)
+### TIM1 PWM Channel Mapping (Partial Remap 1, `AFIO->PCFR1 |= AFIO_PCFR1_TIM1_REMAP_PARTIALREMAP1`)
 
 | Channel | Pin | Port | LED | LA Channel |
 |---------|-----|------|-----|------------|
-| DALI bus | PC0 | GPIOC | -- | D0, D1 (two probe points on DALI bus) |
-| CH1 | PD2 | GPIOD | Red | D4 |
-| CH2 | PA1 | GPIOA | Green | D5 |
-| CH3 | PC3 | GPIOC | Blue | D6 |
-| CH4 | PC4 | GPIOC | White | D7 |
-| PSU_CTRL | PA2 | GPIOA | -- | D3 |
-| I2C1_SDA | PC1 | GPIOC | -- | -- | (reserved for EEPROM) |
-| I2C1_SCL | PC2 | GPIOC | -- | -- | (reserved for EEPROM) |
+| DALI RX | PC3 | GPIOC | -- | (probe DALI bus directly) |
+| DALI TX | PC4 | GPIOC | -- | -- |
+| CH1 (TIM1_CH1) | PC6 | GPIOC | Red | D0 |
+| CH2 (TIM1_CH2) | PC7 | GPIOC | Green | D1 |
+| CH3 (TIM1_CH3) | PC0 | GPIOC | Blue | D2 |
+| CH4 (TIM1_CH4) | PD3 | GPIOD | White | D3 |
+| PSU_CTRL | PA2 | GPIOA | -- | D4 |
+| I2C1_SDA | PC1 | GPIOC | -- | -- (reserved for EEPROM) |
+| I2C1_SCL | PC2 | GPIOC | -- | -- (reserved for EEPROM) |
+| Debug UART TX | PD5 | GPIOD | -- | -- (115200 baud) |
+
+PC6 is dual-use: in PWM modes it's TIM1_CH1; in WS2812/SK6812 modes it's SPI1_MOSI.
 
 ## Build & Flash
 
@@ -103,7 +106,7 @@ pio run -t upload
 - Queries: STATUS (144, with resetState/powerCycleSeen flags), GEAR PRESENT (145), LAMP FAILURE (146), LAMP POWER ON (147), LIMIT ERROR (148), RESET STATE (149), MISSING SHORT (150), VERSION (151), DTR0/DTR1/DTR2 (152/155/156), DEVICE TYPE (153), PHYS MIN (154), ACTUAL LEVEL (160), MAX/MIN LEVEL (161/162), POWER ON LEVEL (163), SYSTEM FAILURE LEVEL (164), FADE SPEEDS (165), SCENE LEVEL (176–191), RANDOM H/M/L (194–196), READ MEMORY LOCATION (197), GROUPS 0–7/8–15 (198/199)
 - Memory bank 0 (read-only, `dali_bank0.c`): IEC 62386-102:2014 §4.3.10 layout — GTIN, FW/HW version, serial, 101/102/103 versions, logical-unit count. 27 bytes (last addr 0x1A). Accessed via cmd 197 with DTR2=bank, DTR1=address; DTR1 post-increments and value mirrors into DTR0. GTIN/serial are zero placeholders pending provisioning. Bank 1 + write commands (0xC7/0xC9) not implemented.
 - Structured frame type (`dali_frame.h`): `dali_frame_t { data, size, flags, timestamp }` with FORWARD / BACKWARD / ERROR / COLLISION / ECHO flag bits. RX path builds the frame in `dali_process()` and passes a pointer into `process_frame()`; ERROR/ECHO frames are rejected at the top of the dispatcher.
-- TX echo / collision detection (IEC 62386-101 §8.2.4.4): `dali_isr_tx_tick()` samples `rx_bus_is_active()` at the start of every Te slot (skipping `TX_SETTLE` and `TX_START_LO`) and compares against the level we drove. Mismatch sets `tx_collision_flag`, releases the bus to idle within 1 Te, and aborts the frame. The flag is read-and-cleared via `dali_tx_consume_collision()` in the main loop, which prints `COLLISION` to debug serial. Requires a real DALI PHY (open-drain dominant-low bus) — the default configuration. With `DALI_NO_PHY` push-pull GPIO, collision detection is non-functional.
+- TX echo / collision detection (IEC 62386-101 §8.2.4.4): `dali_isr_tx_tick()` samples `rx_bus_is_active()` at the start of every Te slot (skipping `TX_SETTLE` and `TX_START_LO`) and compares against the level we drove. Mismatch sets `tx_collision_flag`, releases the bus to idle within 1 Te, and aborts the frame. The flag is read-and-cleared via `dali_phy_consume_collision()` in the main loop, which prints `COLLISION` to debug serial. Requires a real DALI PHY transceiver (open-drain dominant-low bus).
 - Full addressing: INITIALISE, RANDOMISE, COMPARE, SEARCHADDR, PROGRAM SHORT, WITHDRAW, VERIFY SHORT, QUERY SHORT, TERMINATE
 - 32-bit forward frame support (IEC 62386-101, 7.4.3): PHY decodes both 16-bit and 32-bit frames, protocol dispatcher routes by frame length. Currently handles START FW TRANSFER (IEC 62386-105) for bootloader entry via 32-bit frame.
 - Config repeat validation (100 ms window for INITIALISE/RANDOMISE and commands 32–128)
@@ -117,8 +120,8 @@ pio run -t upload
 ### Implemented (IEC 62386-209, DT8 Colour Control)
 - ENABLE DEVICE TYPE 8 protocol (consume-on-use for extended commands)
 - Per-channel RGBW PWM output: `pwm[ch] = log_table[arc_level] × colour[ch] / 254`
-- SET_TEMP_RGB_LEVEL (235): stage R/G/B from DTR2/DTR1/DTR0
-- SET_TEMP_WAF_LEVEL (236): stage W from DTR2 (A/F ignored)
+- SET_TEMP_RGB_LEVEL (235): stage R/G/B from DTR0/DTR1/DTR2 (per IEC 62386-209)
+- SET_TEMP_WAF_LEVEL (236): stage W from DTR0 (A/F ignored)
 - ACTIVATE (226): commit staged colour to output
 - SET_TEMP_COLOUR_TEMPERATURE (231): Tc in mirek → RGBW conversion
 - STEP_COOLER (232) / STEP_WARMER (233): ±10 mirek steps
@@ -177,12 +180,13 @@ AT24C256C (32 KB = 0x0000–0x7FFF)
 | TIM2 | Free-running 1 MHz counter for DALI edge timing (CH2=TX OC, CH4=idle timeout OC) |
 | EXTI0 | Both-edge interrupt on PC0 for DALI RX |
 | I2C1 | AT24C256 EEPROM (PC1=SDA, PC2=SCL, 100 kHz) |
-| SysTick | 1 ms tick for millis() — used by DALI timeout logic |
+| SysTick | 1 ms tick for millis() — HCLK/8 (6 MHz), free-running (no auto-reload), CMP advanced in ISR |
 | USART1 | Debug printf on PD5 (115200 baud, configured by ch32fun) |
 
 ## Important Notes
 
-- **DALI PHY polarity**: Default (PHY mode): TX HIGH = bus active, TX LOW = bus idle; RX HIGH = active, LOW = idle. With `DALI_NO_PHY` defined: polarity is inverted (TX LOW = active, HIGH = idle) for direct GPIO connection.
+- **SysTick / Delay_Ms compatibility**: `millis_init()` must NOT use auto-reload mode (STRE=1) or HCLK source (STCLK=1). ch32fun's `DelaySysTick()` / `Delay_Ms()` expects SysTick to be a free-running 32-bit upcount at HCLK/8 (6 MHz). Auto-reload wraps CNT at CMP, causing `DelaySysTick` to hang when the target exceeds CMP. Correct config: `CTLR=0x3` (STE + STIE, no auto-reload, HCLK/8), CMP advanced by 6000 in the ISR. `FUNCONF_SYSTICK_USE_HCLK` is 0 (default) so `DELAY_MS_TIME = SYSCLK/8000 = 6000`.
+- **DALI PHY polarity**: TX HIGH = bus active (mark), TX LOW = bus idle. RX LOW = bus active (PHY inverts), HIGH = idle. Requires a real DALI PHY transceiver for collision detection.
 - **TIM1 MOE**: TIM1 is an advanced timer — `BDTR.MOE` must be set or PWM outputs won't appear. This is already handled in `pwm_init()`.
 - **ISR attribute**: All ISRs must use `__attribute__((interrupt))` for correct RISC-V hardware stacking on CH32V003.
 - **Log dimming table**: 508 bytes in flash. Changing PWM frequency (ATRLR) requires regenerating the table. Use: `python -c "for i in range(1,255): x=10**((i-1)*3/253-1); print(round(x/100*ATRLR))"`
@@ -250,32 +254,43 @@ When making changes to the firmware, always check and update all related documen
 
 ### Pin Assignments (Bootloader vs Firmware)
 
+Both the DALI bootloader (`DALI_Bootloader/dali_bootloader.c`) and the firmware use the same DALI bus and EEPROM pins. The USB bootloader uses PD0/PD3/PD4 for USB.
+
 | Pin | Bootloader | Firmware |
 |-----|-----------|----------|
-| PC0 | DALI RX | DALI RX (EXTI0) |
-| PC5 | DALI TX | DALI TX |
-| PC7 | Boot button (active low) | -- |
-| PD0 | USB DPU pull-up | USB DPU pull-up |
-| PD3 | USB D- | USB D- |
-| PD4 | USB D+ | USB D+ |
+| PA1 | Boot button (active low) | -- |
+| PC1 | I2C SDA (EEPROM) | I2C SDA (EEPROM) |
+| PC2 | I2C SCL (EEPROM) | I2C SCL (EEPROM) |
+| PC3 | DALI RX | DALI RX (EXTI3) |
+| PC4 | DALI TX | DALI TX |
+| PC6 | -- | TIM1_CH1 (Red) / SPI1_MOSI |
+| PC7 | -- | TIM1_CH2 (Green) |
+| PC0 | -- | TIM1_CH3 (Blue) |
+| PD3 | -- | TIM1_CH4 (White) |
+| PA2 | -- | PSU_CTRL |
+| PD0 | USB DPU pull-up (USB BL) | -- |
+| PD2 | USB D- (USB BL) | -- |
+| PD4 | USB D+ (USB BL) | -- |
+| PD5 | -- | Debug UART TX (115200) |
 
 **WARNING**: Do not connect an EVG to the DALI bus AND USB simultaneously. USB should only be used for firmware upload while the device is disconnected from the DALI bus.
 
 ## Testing
 
-Test cases and HIL setup documentation are in `test/`. Test scripts are in `Debug_Helpers/`.
+HIL test setup and test tooling live in `Debug_Helpers/`. The single source of truth for the physical setup (target, programmer, DALI bus, gateway, KNX/IP router, logic analyzer, UART logger) is **`Debug_Helpers/HIL_Setup.md`** — read it first when picking up a debug session.
 
-Key scripts:
-- `ch32fun_test.ps1` — Forward + backward frame + PWM test
-- `ch32fun_assign_test.ps1` — Full addressing protocol test
-- `ch32fun_compliance_test.ps1` — DALI-1/2 compliance (min/max, scenes, groups, RESET, DTR1/2)
-- `ch32fun_nvm_test.ps1` — NVM flash persistence (config + reset via wlink + verify, 36/36 pass)
-- `ch32fun_newcmd_test.ps1` — New commands test (queries 146-149, status flags, cmd 48, 13/13 pass)
-- `ch32fun_dt8_test.ps1` — DT8 colour control (RGBW, Tc, queries)
-- `dali_timing_verify.ps1` — IEC 62386-101 timing compliance (LA)
-- `dali_logdim_test.ps1` — Logarithmic dimming curve verification
-- `la_pwm_duty.ps1` — LA PWM duty cycle measurement per channel (D4–D7)
-- `ch32_led_test/` — Standalone LED PWM test firmware (ch32fun, no DALI)
+Subdirectories:
+
+| Path | Purpose |
+|------|---------|
+| `Debug_Helpers/HIL_Setup.md` | Pin map, IPs, tool paths, sample-rate guidance |
+| `Debug_Helpers/uart_logger.py` | Continuous COM14 capture to `logs/uart_*.log` |
+| `Debug_Helpers/PWM_Test/` | Standalone CH32V003 GPIO toggle firmware + Python `send_colors.py` (KNX→Gateway→DALI→PWM end-to-end test) |
+| `Debug_Helpers/DALI_RX_Test/` | Standalone CH32V003 RX-test bootloader + Python WS-direct DALI test scripts (`diagnose_disconnect.py`, `full_update.py`, `send_bulk_test.py`) |
+| `Debug_Helpers/DALI_Sniffer_Host/` | USB sniffer host app |
+| `Debug_Helpers/DALI_UART_Sniffer/` | UART-based DALI sniffer |
+| `Debug_Helpers/EEPROM_Test/` | Standalone CH32V003 I2C EEPROM DMA test |
+| `Debug_Helpers/logs/` | UART log archive |
 
 ## Resource Usage (RGBW default)
 

@@ -9,6 +9,7 @@
 #include "ch32fun.h"
 #include <stdio.h>
 #include "dali_protocol.h"
+#include "../../logger.h"
 #include "../dali_state.h"
 #include "../dali_physical.h"
 #include "../dali_frame.h"
@@ -17,6 +18,9 @@
 #include "dali_addressing.h"
 #include "dali_dt8.h"
 #include "dali_query.h"
+#include "dali_config_repeat.h"
+#include "dali_cmd_scenes.h"
+#include "../dali_dtr.h"
 #include "../nvm/dali_nvm.h"
 
 /* millis() provided by main.c */
@@ -57,38 +61,27 @@ dali_device_state_t ds = {
 };
 
 /* ── DALI bootloader entry via software reset ─────────────────────── */
-#define BOOTLOADER_MAGIC_ADDR   ((volatile uint32_t *)0x200007F0)
-#define BOOTLOADER_MAGIC_VALUE  0xDAB00DAD
-
 static void enter_bootloader(void) {
-    *BOOTLOADER_MAGIC_ADDR = BOOTLOADER_MAGIC_VALUE;
+    /* WCH official SystemReset_StartMode(Start_Mode_BOOT) sequence.
+     * Copied from LED-Snowflake bootloader.h which works on CH32V003.
+     * Sets FLASH->STATR bit 14 which the bootloader checks on startup. */
+    __disable_irq();
+    FLASH->KEYR = FLASH_KEY1;
+    FLASH->KEYR = FLASH_KEY2;
+    FLASH->MODEKEYR = FLASH_KEY1;
+    FLASH->MODEKEYR = FLASH_KEY2;
     FLASH->BOOT_MODEKEYR = FLASH_KEY1;
     FLASH->BOOT_MODEKEYR = FLASH_KEY2;
-    FLASH->STATR = 1 << 14;
+    FLASH->STATR &= ~(1 << 14);
+    FLASH->STATR |= (1 << 14);
     FLASH->CTLR = CR_LOCK_Set;
     PFIC->SCTLR = 1 << 31;
     while (1);
 }
 
-/* ── Config repeat validation ────────────────────────────────────── */
-static volatile uint8_t     last_addr_byte = 0;
-static volatile uint8_t     last_command = 0;
-static volatile uint32_t    last_command_time = 0;
-static volatile uint8_t     config_repeat_pending = 0;
-
-static uint8_t check_config_repeat(uint8_t addr, uint8_t cmd, uint32_t now) {
-    if (config_repeat_pending && last_addr_byte == addr
-        && last_command == cmd
-        && (now - last_command_time) <= 100) {
-        config_repeat_pending = 0;
-        return 1;
-    }
-    last_addr_byte = addr;
-    last_command = cmd;
-    last_command_time = now;
-    config_repeat_pending = 1;
-    return 0;
-}
+/* Config repeat validation — shared implementation in dali_config_repeat.c.
+ * Local alias for readability within this file. */
+#define check_config_repeat dali_check_config_repeat
 
 /* ================================================================== *
  *  process_frame() — dispatch a received 16-bit forward frame         *
@@ -246,7 +239,7 @@ static void process_frame(const dali_frame_t *frame) {
                     ds.colour_callback((const uint8_t *)ds.colour_actual, EVG_NUM_COLOURS);
 #endif
                 nvm_mark_dirty();
-                printf("RESET\n");
+                LOG_CMD("RESET");
             }
             break;
 
@@ -262,7 +255,7 @@ static void process_frame(const dali_frame_t *frame) {
                 if (ds.max_level < ds.min_level) ds.max_level = ds.min_level;
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("MAX=%d\n", ds.max_level);
+                LOG_CMD("MAX=%d", ds.max_level);
             }
             break;
 
@@ -277,7 +270,7 @@ static void process_frame(const dali_frame_t *frame) {
                 if (ds.min_level > ds.max_level) ds.min_level = ds.max_level;
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("MIN=%d\n", ds.min_level);
+                LOG_CMD("MIN=%d", ds.min_level);
             }
             break;
 
@@ -286,7 +279,7 @@ static void process_frame(const dali_frame_t *frame) {
                 ds.power_on_level = ds.dtr0;
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("PON=%d\n", ds.power_on_level);
+                LOG_CMD("PON=%d", ds.power_on_level);
             }
             break;
 
@@ -295,26 +288,26 @@ static void process_frame(const dali_frame_t *frame) {
                 ds.sys_fail_level = ds.dtr0;
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("SFAIL=%d\n", ds.sys_fail_level);
+                LOG_CMD("SFAIL=%d", ds.sys_fail_level);
             }
             break;
 
         case DALI_CMD_DTR_AS_FADE_TIME:
             if (check_config_repeat(addr_byte, data_byte, now)) {
-                ds.fade_time = ds.dtr0 & 0x0F;
+                ds.fade_time = dtr_fade_time();
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("FADE_TIME=%d\n", ds.fade_time);
+                LOG_CMD("FADE_TIME=%d", ds.fade_time);
             }
             break;
 
         case DALI_CMD_DTR_AS_FADE_RATE:
             if (check_config_repeat(addr_byte, data_byte, now)) {
-                uint8_t r = ds.dtr0 & 0x0F;
+                uint8_t r = dtr_fade_rate();
                 if (r > 0) ds.fade_rate = r;
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("FADE_RATE=%d\n", ds.fade_rate);
+                LOG_CMD("FADE_RATE=%d", ds.fade_rate);
             }
             break;
 
@@ -323,89 +316,58 @@ static void process_frame(const dali_frame_t *frame) {
                 if (ds.dtr0 == 0xFF) {
                     ds.short_address = 0xFF;
                 } else {
-                    ds.short_address = (ds.dtr0 >> 1) & 0x3F;
+                    ds.short_address = dtr_short_address();
                 }
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("SHORT_ADDR=%d\n", ds.short_address);
+                LOG_CMD("SHORT_ADDR=%d", ds.short_address);
             }
             break;
 
-        case DALI_CMD_DTR_AS_EXT_FADE:
+        case 129: /* ENABLE WRITE MEMORY — not implemented, reuse for ext fade (DALI-2) */
             if (check_config_repeat(addr_byte, data_byte, now)) {
                 if (ds.dtr0 > 0x4F) {
                     ds.ext_fade_base = 0;
                     ds.ext_fade_mult = 0;
                 } else {
-                    ds.ext_fade_base = ds.dtr0 & 0x0F;
-                    ds.ext_fade_mult = (ds.dtr0 >> 4) & 0x07;
+                    ds.ext_fade_base = dtr_ext_fade_base();
+                    ds.ext_fade_mult = dtr_ext_fade_mult();
                 }
                 nvm_mark_dirty();
                 ds.reset_state = 0;
-                printf("EXTFADE b=%d m=%d\n", ds.ext_fade_base, ds.ext_fade_mult);
+                LOG_CMD("EXTFADE b=%d m=%d", ds.ext_fade_base, ds.ext_fade_mult);
             }
             break;
 
         case DALI_CMD_ENTER_BOOTLOADER:
             if (check_config_repeat(addr_byte, data_byte, now)) {
-                printf("BOOTLOADER!\n");
+                LOG_CMD("BOOTLOADER!");
                 nvm_save();
                 enter_bootloader();
             }
             break;
 
         default:
-            /* Range-based commands */
+            /* Range-based commands — scenes, groups, DT8, queries */
             if (data_byte >= DALI_CMD_GO_TO_SCENE_BASE
                 && data_byte <= DALI_CMD_GO_TO_SCENE_BASE + 15) {
-                uint8_t scene = data_byte - DALI_CMD_GO_TO_SCENE_BASE;
-                uint8_t slevel = ds.scene_level[scene];
-                if (slevel == 0xFF) break;
-                dali_fade_stop();
-                slevel = clamp_level(slevel);
-                uint32_t eff_fade_ms = dali_fade_get_effective_ms();
-                if (slevel == 0 || eff_fade_ms == 0 || ds.actual_level == slevel) {
-                    ds.actual_level = slevel;
-                    if (ds.arc_callback) ds.arc_callback(ds.actual_level);
-                } else {
-                    dali_fade_start(slevel, eff_fade_ms);
-                }
+                dali_scene_recall(data_byte - DALI_CMD_GO_TO_SCENE_BASE);
             } else if (data_byte >= DALI_CMD_STORE_SCENE_BASE
                        && data_byte <= DALI_CMD_STORE_SCENE_BASE + 15) {
-                if (check_config_repeat(addr_byte, data_byte, now)) {
-                    uint8_t scene = data_byte - DALI_CMD_STORE_SCENE_BASE;
-                    ds.scene_level[scene] = ds.dtr0;
-                    nvm_mark_dirty();
-                    ds.reset_state = 0;
-                    printf("SCENE%d=%d\n", scene, ds.dtr0);
-                }
+                if (check_config_repeat(addr_byte, data_byte, now))
+                    dali_scene_store(data_byte - DALI_CMD_STORE_SCENE_BASE);
             } else if (data_byte >= DALI_CMD_REMOVE_SCENE_BASE
                        && data_byte <= DALI_CMD_REMOVE_SCENE_BASE + 15) {
-                if (check_config_repeat(addr_byte, data_byte, now)) {
-                    uint8_t scene = data_byte - DALI_CMD_REMOVE_SCENE_BASE;
-                    ds.scene_level[scene] = 0xFF;
-                    nvm_mark_dirty();
-                    ds.reset_state = 0;
-                    printf("RMSCENE%d\n", scene);
-                }
+                if (check_config_repeat(addr_byte, data_byte, now))
+                    dali_scene_remove(data_byte - DALI_CMD_REMOVE_SCENE_BASE);
             } else if (data_byte >= DALI_CMD_ADD_GROUP_BASE
                        && data_byte <= DALI_CMD_ADD_GROUP_BASE + 15) {
-                if (check_config_repeat(addr_byte, data_byte, now)) {
-                    uint8_t group = data_byte - DALI_CMD_ADD_GROUP_BASE;
-                    ds.group_membership |= (1 << group);
-                    nvm_mark_dirty();
-                    ds.reset_state = 0;
-                    printf("ADDGRP%d\n", group);
-                }
+                if (check_config_repeat(addr_byte, data_byte, now))
+                    dali_group_add(data_byte - DALI_CMD_ADD_GROUP_BASE);
             } else if (data_byte >= DALI_CMD_REMOVE_GROUP_BASE
                        && data_byte <= DALI_CMD_REMOVE_GROUP_BASE + 15) {
-                if (check_config_repeat(addr_byte, data_byte, now)) {
-                    uint8_t group = data_byte - DALI_CMD_REMOVE_GROUP_BASE;
-                    ds.group_membership &= ~(1 << group);
-                    nvm_mark_dirty();
-                    ds.reset_state = 0;
-                    printf("RMGRP%d\n", group);
-                }
+                if (check_config_repeat(addr_byte, data_byte, now))
+                    dali_group_remove(data_byte - DALI_CMD_REMOVE_GROUP_BASE);
 #if EVG_HAS_DT8
             } else if (data_byte >= 224 && enabled_dt == DALI_DEVICE_TYPE) {
                 dali_dt8_process_command(data_byte);
@@ -450,7 +412,7 @@ static void process_frame_32(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3) {
     switch (b2) {
     case 0x00:  /* START FW TRANSFER — config repeat required */
         if (b3 == 0x00 && check_config_repeat(b0, b2, now)) {
-            printf("FW_TRANSFER (IEC105)!\n");
+            LOG_CMD("FW_TRANSFER (IEC105)!");
             dali_phy_send_backward(0xFF);    /* YES */
             nvm_save();
             enter_bootloader();
@@ -484,7 +446,6 @@ void dali_protocol_process(void) {
     } else if (bitlen == 32) {
         process_frame_32(raw[0], raw[1], raw[2], raw[3]);
     }
-    /* else: discard (noise, echo, corruption) */
 }
 
 void dali_protocol_power_on(void) {

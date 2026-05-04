@@ -171,21 +171,12 @@
   #error "No EVG_MODE defined. Define one of: EVG_MODE_ONOFF, EVG_MODE_SINGLE, EVG_MODE_CCT, EVG_MODE_RGB, EVG_MODE_RGBW, EVG_MODE_WS2812, EVG_MODE_SK6812_RGB, EVG_MODE_SK6812_RGBW"
 #endif
 
-/* ── DALI Bus Mode ──────────────────────────────────────────────────
-   Define DALI_NO_PHY for direct GPIO-to-GPIO connection (no transceiver).
-   Comment out / undefine when using a real DALI PHY transceiver.
-
-   NO_PHY (direct GPIO):
-     TX: LOW = bus active (mark), HIGH = bus idle (space)
-     RX: LOW = bus active (mark), HIGH = bus idle (space)
-
-   With PHY transceiver (e.g. TI DALI-1 PHY, SN65HVD62):
-     TX: HIGH = pull bus active (mark), LOW = release bus (idle)
-     RX: HIGH = bus active (mark), LOW = bus idle (space)
-   ──────────────────────────────────────────────────────────────────── */
-/* #define DALI_NO_PHY */       /* Uncomment for direct GPIO (no transceiver) */
-
 /* ── DALI Bus Interface ──────────────────────────────────────────────
+   Requires a DALI PHY transceiver (e.g. SN65HVD62).
+   TX: HIGH = pull bus active (mark), LOW = release bus (idle)
+   RX: LOW = bus active (PHY inverts), HIGH = bus idle (space)
+   Collision detection relies on PHY open-drain bus readback during TX.
+
    RX: PC3 — EXTI3 triggers on both edges, TIM2->CNT timestamps them.
    TX: PC4 — GPIO push-pull output, driven by TIM2 CH2 output compare ISR
              to generate Manchester-encoded backward frames.

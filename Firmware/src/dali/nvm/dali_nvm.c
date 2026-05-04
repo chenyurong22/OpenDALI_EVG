@@ -19,10 +19,11 @@
 */
 
 #include "ch32fun.h"
-#include <stdio.h>
 #include <string.h>
 #include "dali_nvm.h"
+#include "../../logger.h"
 #include "../dali_state.h"
+#include "../phy/dali_phy.h"
 #include "../../eeprom/eeprom.h"
 #include "../../eeprom/eeprom_layout.h"
 #include "../../config/hardware.h"
@@ -53,7 +54,8 @@ static void nvm_write_identity(void) {
         .fw_ver_minor = DALI_FW_VERSION_MINOR,
         .short_address = ds.short_address,
     };
-    eeprom_write(EE_ADDR_IDENTITY, (const uint8_t *)&id, sizeof(id));
+    if (!eeprom_write(EE_ADDR_IDENTITY, (const uint8_t *)&id, sizeof(id)))
+        LOG_ERR("EEPROM identity write failed");
 }
 
 /* ================================================================== *
@@ -66,13 +68,16 @@ void nvm_init(void) {
         uint8_t bytes[EE_CONFIG_SIZE];
     } buf;
 
-    eeprom_read(EE_ADDR_CONFIG, buf.bytes, sizeof(buf));
+    if (!eeprom_read(EE_ADDR_CONFIG, buf.bytes, sizeof(buf))) {
+        LOG_ERR("EEPROM config read");
+        return;
+    }
 
     if (buf.nvm.magic == NVM_MAGIC) {
         nvm_unpack_state(&buf.nvm);
-        printf("NVM: loaded addr=%d (EEPROM)\n", buf.nvm.short_address);
+        LOG_NVM("loaded addr=%d", buf.nvm.short_address);
     } else {
-        printf("NVM: no valid data in EEPROM\n");
+        LOG_NVM("no valid data in EEPROM");
     }
 
     /* Always write identity block (updates GTIN, versions, short addr) */
@@ -93,13 +98,17 @@ void nvm_save(void) {
     nvm_pack_state(&buf.nvm);
 
     /* Write config to EEPROM (64 bytes = 1 page, no boundary crossing) */
-    eeprom_write(EE_ADDR_CONFIG, buf.bytes, sizeof(buf));
+    if (!eeprom_write(EE_ADDR_CONFIG, buf.bytes, sizeof(buf))) {
+        LOG_ERR("EEPROM config write");
+        nvm_dirty_time = millis();  /* retry after another delay, not immediately */
+        return;
+    }
 
     /* Update short address in identity block too */
     nvm_write_identity();
 
     nvm_dirty = 0;
-    printf("NVM: saved addr=%d (EEPROM)\n", buf.nvm.short_address);
+    LOG_NVM("saved addr=%d", buf.nvm.short_address);
 }
 
 /* ================================================================== *
@@ -113,6 +122,10 @@ void nvm_mark_dirty(void) {
 void nvm_tick(void) {
     if (!nvm_dirty) return;
     if (millis() - nvm_dirty_time < NVM_SAVE_DELAY_MS) return;
+    /* Only write when DALI bus is idle (no frame in last 50ms).
+     * EEPROM write blocks the main loop for ~17ms, which could
+     * delay a backward frame response past the 9.2ms deadline. */
+    if (millis() - dali_phy_last_rx_edge_ms() < 50) return;
     nvm_save();
 }
 

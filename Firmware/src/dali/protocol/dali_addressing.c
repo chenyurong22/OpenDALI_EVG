@@ -9,7 +9,10 @@
 #include "ch32fun.h"
 #include <stdio.h>
 #include "dali_addressing.h"
+#include "../../logger.h"
+#include "dali_config_repeat.h"
 #include "../dali_state.h"
+#include "../dali_dtr.h"
 #include "../dali_physical.h"
 #include "../phy/dali_phy.h"
 #include "../nvm/dali_nvm.h"
@@ -29,25 +32,8 @@ static volatile uint32_t    init_start_time = 0;
 static volatile uint8_t     random_h = 0, random_m = 0, random_l = 0;
 static volatile uint8_t     search_h = 0xFF, search_m = 0xFF, search_l = 0xFF;
 
-/* ── Config repeat validation ────────────────────────────────────── */
-static volatile uint8_t     last_addr_byte = 0;
-static volatile uint8_t     last_command = 0;
-static volatile uint32_t    last_command_time = 0;
-static volatile uint8_t     config_repeat_pending = 0;
-
-static uint8_t check_config_repeat(uint8_t addr, uint8_t cmd, uint32_t now) {
-    if (config_repeat_pending && last_addr_byte == addr
-        && last_command == cmd
-        && (now - last_command_time) <= 100) {
-        config_repeat_pending = 0;
-        return 1;
-    }
-    last_addr_byte = addr;
-    last_command = cmd;
-    last_command_time = now;
-    config_repeat_pending = 1;
-    return 0;
-}
+/* Config repeat validation — shared implementation in dali_config_repeat.c */
+#define check_config_repeat dali_check_config_repeat
 
 /* ================================================================== *
  *  PUBLIC API                                                         *
@@ -59,7 +45,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
     switch (addr_byte) {
     case DALI_SPECIAL_TERMINATE:
         init_state = INIT_DISABLED;
-        printf("TERM\n");
+        LOG_CMD("TERM");
         break;
 
     case DALI_SPECIAL_DTR:
@@ -79,7 +65,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
             if (addressed) {
                 init_state = INIT_ENABLED;
                 init_start_time = now;
-                printf("INIT ok\n");
+                LOG_CMD("INIT ok");
             }
         }
         break;
@@ -88,6 +74,8 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
         if (init_state != INIT_ENABLED) break;
         if (check_config_repeat(addr_byte, data_byte, now)) {
             uint32_t seed = SysTick->CNT;
+            seed ^= *(volatile uint32_t *)0x1FFFF7E8;  /* ESIG UID word 0 */
+            seed ^= *(volatile uint32_t *)0x1FFFF7EC;  /* ESIG UID word 1 */
             seed ^= (uint32_t)ds.short_address << 16;
             seed ^= (uint32_t)ds.actual_level << 8;
             seed *= 1103515245UL;
@@ -95,7 +83,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
             random_h = (seed >> 16) & 0xFF;
             random_m = (seed >> 8) & 0xFF;
             random_l = seed & 0xFF;
-            printf("RAND=%02X%02X%02X\n", random_h, random_m, random_l);
+            LOG_CMD("RAND=%02X%02X%02X", random_h, random_m, random_l);
         }
         break;
 
@@ -117,7 +105,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
             uint32_t search = ((uint32_t)search_h << 16) | ((uint32_t)search_m << 8) | search_l;
             if (random == search) {
                 init_state = INIT_WITHDRAWN;
-                printf("WITHDRAW\n");
+                LOG_CMD("WITHDRAW");
             }
         }
         break;
@@ -143,13 +131,13 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
                 if (data_byte == 0xFF) {
                     ds.short_address = 0xFF;
                 } else {
-                    ds.short_address = (data_byte >> 1) & 0x3F;
+                    ds.short_address = dali_decode_short_address(data_byte);
                 }
                 nvm_mark_dirty();
-                printf("PROG_SHORT=%d\n", ds.short_address);
+                LOG_CMD("PROG_SHORT=%d", ds.short_address);
             } else {
-                printf("PROG_SHORT: random!=search R=%06lX S=%06lX\n",
-                       (unsigned long)random, (unsigned long)search);
+                LOG_ERR("PROG_SHORT: random!=search R=%06lX S=%06lX",
+                        (unsigned long)random, (unsigned long)search);
             }
         }
         break;
@@ -157,7 +145,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
     case DALI_SPECIAL_VERIFY_SHORT:
         if (init_state != INIT_ENABLED) break;
         {
-            uint8_t addr = (data_byte >> 1) & 0x3F;
+            uint8_t addr = dali_decode_short_address(data_byte);
             if (addr == ds.short_address) {
                 dali_phy_send_backward(0xFF);
             }

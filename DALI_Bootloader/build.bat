@@ -22,7 +22,7 @@ del /q dali_bootloader.bin dali_bootloader.elf dali_bootloader.lst dali_bootload
 echo Building IEC 62386-105 DALI bootloader...
 "%PREFIX%-gcc" -o dali_bootloader.elf ^
   startup.S ^
-  dali_bootloader_105.c ^
+  dali_bootloader.c ^
   -g -Os -flto -ffunction-sections -fdata-sections -fmessage-length=0 -msmall-data-limit=8 ^
   -march=rv32ec -mabi=ilp32e -DCH32V003=1 ^
   -static-libgcc -fno-builtin ^

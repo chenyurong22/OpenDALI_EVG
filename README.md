@@ -25,7 +25,7 @@ Key highlights:
 ```
 OpenDALI_EVG/
 ├── Firmware/           CH32V003 DALI slave firmware (PlatformIO project)
-├── DALI_Bootloader/    Firmware-over-DALI bootloader (976 bytes, experimental)
+├── DALI_Bootloader/    IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
 ├── USB_Bootloader/     USB HID bootloader (cnlohr ch32v003fun, pre-built binaries)
 ├── DALI-Master/        Pico-based DALI master for testing
 ├── Debug_Helpers/      Test scripts and tools (PowerShell, Python)
@@ -44,7 +44,7 @@ See [Firmware/README.md](Firmware/README.md) for architecture, commands, and tes
 
 ### DALI Bootloader
 
-Firmware-over-DALI-bus bootloader fitting in the 1920-byte boot area. Allows firmware updates via the DALI bus without a programmer — uses standard DALI forward frames with vendor-specific command bytes. See [DALI_Bootloader/README.md](DALI_Bootloader/README.md).
+IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1876 / 1920 bytes). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for 10 KB). Firmware is staged in an I2C EEPROM before committing to flash. Validates Block 0 GTIN and EVG mode ID. See [DALI_Bootloader/README.md](DALI_Bootloader/README.md).
 
 ### USB Bootloader
 

@@ -11,9 +11,10 @@
 #if EVG_HAS_DT8
 
 #include "ch32fun.h"
-#include <stdio.h>
 #include "dali_dt8.h"
+#include "../../logger.h"
 #include "../dali_state.h"
+#include "../dali_dtr.h"
 #include "../dali_physical.h"
 #include "../phy/dali_phy.h"
 
@@ -54,29 +55,29 @@ void dali_dt8_process_command(uint8_t cmd) {
             ds.colour_actual[i] = ds.colour_temp[i];
         if (ds.colour_callback)
             ds.colour_callback((const uint8_t *)ds.colour_actual, EVG_NUM_COLOURS);
-        printf("DT8 ACT R=%d G=%d B=%d W=%d\n",
-               ds.colour_actual[0], ds.colour_actual[1],
-               ds.colour_actual[2], ds.colour_actual[3]);
+        LOG_CMD("DT8 ACT R=%d G=%d B=%d W=%d",
+                ds.colour_actual[0], ds.colour_actual[1],
+                ds.colour_actual[2], ds.colour_actual[3]);
         break;
 
 #if EVG_DT8_HAS_PRIMARY
     case DALI_DT8_SET_TEMP_RGB_LEVEL:
-        ds.colour_temp[0] = ds.dtr2;
+        ds.colour_temp[0] = ds.dtr0;
         ds.colour_temp[1] = ds.dtr1;
-        ds.colour_temp[2] = ds.dtr0;
+        ds.colour_temp[2] = ds.dtr2;
         ds.colour_tc = 0;
         break;
 
 #if EVG_NUM_COLOURS >= 4
     case DALI_DT8_SET_TEMP_WAF_LEVEL:
-        ds.colour_temp[3] = ds.dtr2;
+        ds.colour_temp[3] = ds.dtr0;
         break;
 #endif
 #endif /* EVG_DT8_HAS_PRIMARY */
 
 #if EVG_DT8_HAS_TC
     case DALI_DT8_SET_TEMP_COLOUR_TEMP:
-        ds.colour_tc = ((uint16_t)ds.dtr1 << 8) | ds.dtr0;
+        ds.colour_tc = dtr_colour_temp();
         TC_CONVERT(ds.colour_tc, (uint8_t *)ds.colour_temp);
         break;
 
