@@ -41,7 +41,10 @@ typedef struct dali_nvm_t {
     uint8_t  colour[4];          /* DT8 RGBW levels, 0xFF = default (254) */
     uint16_t colour_tc;          /* DT8 colour temp in mirek, 0xFFFF = not set */
     uint8_t  ext_fade;           /* DALI-2 extended fade time: (mult<<4)|base, 0xFF = not set */
-    uint8_t  _reserved[23];     /* Future use — initialized to 0xFF */
+    uint8_t  random_h;           /* RANDOM ADDRESS high byte (IEC 102 Table 6, persistent) */
+    uint8_t  random_m;           /* RANDOM ADDRESS mid byte */
+    uint8_t  random_l;           /* RANDOM ADDRESS low byte. Default 0xFF on factory. */
+    uint8_t  _reserved[20];     /* Future use — initialized to 0xFF */
 } dali_nvm_t;
 
 /* Initialize NVM — reads EEPROM, restores state if valid.

@@ -3,6 +3,14 @@
 
     See dali_bank0.h for the rationale and the spec reference. The byte
     layout follows IEC 62386-102:2014 §4.3.10 (DALI-2 control gear).
+
+    Storage: Flash (`static const`). The DALI_*_VERSION_* / DALI_GTIN /
+    DALI_SERIAL defines are baked in at compile time, so the contents
+    are guaranteed fresh after every reflash — no EEPROM round-trip.
+    This is the *only* version source visible to a DALI master via
+    READ MEMORY LOCATION (cmd 0xC5). The EEPROM identity block written
+    by nvm_write_identity() is bootloader-private and never served on
+    the bus.
 */
 #include "dali_bank0.h"
 #include "../../config/hardware.h"

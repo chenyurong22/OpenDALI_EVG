@@ -17,7 +17,7 @@
 #define DALI_FW_VERSION_MAJOR   0
 #endif
 #ifndef DALI_FW_VERSION_MINOR
-#define DALI_FW_VERSION_MINOR   1
+#define DALI_FW_VERSION_MINOR   2
 #endif
 
 /* ── Hardware version ───────────────────────────────────────────────

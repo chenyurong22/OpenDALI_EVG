@@ -29,7 +29,12 @@ typedef enum {
 
 static volatile init_state_t init_state = INIT_DISABLED;
 static volatile uint32_t    init_start_time = 0;
-static volatile uint8_t     random_h = 0, random_m = 0, random_l = 0;
+/* IEC 62386-102:2009 Table 6: factory default of RANDOM ADDRESS is
+ * 0xFFFFFF (not 0), and the field is NVM-persistent (no "RAM" tag).
+ * The actual value is loaded from EEPROM by nvm_unpack_state() via
+ * dali_addressing_set_random(); these BSS-init values are only used
+ * on the very first boot, before any NVM save has occurred. */
+static volatile uint8_t     random_h = 0xFF, random_m = 0xFF, random_l = 0xFF;
 static volatile uint8_t     search_h = 0xFF, search_m = 0xFF, search_l = 0xFF;
 
 /* Config repeat validation — shared implementation in dali_config_repeat.c */
@@ -94,6 +99,7 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
             random_h = (seed >> 16) & 0xFF;
             random_m = (seed >> 8) & 0xFF;
             random_l = seed & 0xFF;
+            nvm_mark_dirty();   /* persist across power cycles (IEC 102 Table 6) */
             LOG_CMD("RAND=%02X%02X%02X", random_h, random_m, random_l);
         }
         break;
@@ -215,3 +221,9 @@ uint8_t dali_addressing_in_init(void) {
 uint8_t dali_addressing_random_h(void) { return random_h; }
 uint8_t dali_addressing_random_m(void) { return random_m; }
 uint8_t dali_addressing_random_l(void) { return random_l; }
+
+void dali_addressing_set_random(uint8_t h, uint8_t m, uint8_t l) {
+    random_h = h;
+    random_m = m;
+    random_l = l;
+}

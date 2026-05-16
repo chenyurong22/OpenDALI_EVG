@@ -24,6 +24,7 @@
 #include "../../logger.h"
 #include "../dali_state.h"
 #include "../phy/dali_phy.h"
+#include "../protocol/dali_addressing.h"
 #include "../../eeprom/eeprom.h"
 #include "../../eeprom/eeprom_layout.h"
 #include "../../config/hardware.h"
@@ -41,6 +42,12 @@ static volatile uint32_t nvm_dirty_time = 0;
 
 /* ================================================================== *
  *  Identity block — written to EEPROM at boot + on address change     *
+ *                                                                     *
+ *  This is a *separate* identity copy from the DALI bank 0 in flash   *
+ *  (dali_bank0.c). It is consumed only by the bootloader for Block 0  *
+ *  validation during firmware updates (GTIN + EVG-mode match) — the   *
+ *  DALI master never sees it. Re-written on every boot from the same  *
+ *  compile-time defines bank 0 uses, so the two can't diverge.        *
  * ================================================================== */
 static void nvm_write_identity(void) {
     ee_identity_t id = {
@@ -151,6 +158,9 @@ void nvm_pack_state(dali_nvm_t *nvm) {
     nvm->colour_tc = 0xFFFF;
 #endif
     nvm->ext_fade = (ds.ext_fade_mult << 4) | ds.ext_fade_base;
+    nvm->random_h = dali_addressing_random_h();
+    nvm->random_m = dali_addressing_random_m();
+    nvm->random_l = dali_addressing_random_l();
 }
 
 void nvm_unpack_state(const dali_nvm_t *nvm) {
@@ -175,5 +185,10 @@ void nvm_unpack_state(const dali_nvm_t *nvm) {
         ds.ext_fade_base = nvm->ext_fade & 0x0F;
         ds.ext_fade_mult = (nvm->ext_fade >> 4) & 0x07;
     }
+    /* Restore RANDOM ADDRESS. Pre-existing EEPROMs from firmware
+     * versions before random-address persistence had 0xFF here
+     * (was part of _reserved), which matches the spec factory
+     * default — so old saves auto-upgrade without intervention. */
+    dali_addressing_set_random(nvm->random_h, nvm->random_m, nvm->random_l);
     ds.reset_state = 0;
 }

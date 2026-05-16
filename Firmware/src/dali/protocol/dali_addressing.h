@@ -26,4 +26,10 @@ uint8_t dali_addressing_random_h(void);
 uint8_t dali_addressing_random_m(void);
 uint8_t dali_addressing_random_l(void);
 
+/* Restore random address from NVM (called by nvm_unpack_state on boot).
+ * Setter is intentionally not exposed for general use — the random
+ * address is owned by this module and only mutated by RANDOMISE or
+ * NVM restore. */
+void dali_addressing_set_random(uint8_t h, uint8_t m, uint8_t l);
+
 #endif /* _DALI_ADDRESSING_H */
