@@ -7,7 +7,7 @@ A completely open-source Proof of concept for a ultra low standby current **DALI
 
 > [!NOTE]
 > **Trademark notice:** *DALI*, *DALI-2*, *D4i*, *DALI+* and *DiiA* are trademarks of the Digital Illumination Interface Alliance (DiiA). This project is an independent open-source implementation and compatible with the IEC 62386 standard. It is referred to as *DALI-2-compatible*, it has not undergone DiiA certification and may not be marketed as a DALI product.
-> use for educational purposes only!
+> Use for educational purposes only!
 
 ## Overview
 
@@ -29,10 +29,8 @@ Key highlights:
 ```
 OpenDALI_EVG/
 ├── Firmware/           CH32V003 DALI slave firmware (PlatformIO project)
-├── Bootloader/    IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
-├── USB_Bootloader/     USB HID bootloader (cnlohr ch32v003fun, pre-built binaries)
-├── DALI-Master/        Pico-based DALI master for testing
-├── Debug_Helpers/      Test scripts and tools (PowerShell, Python)
+├── Bootloader/         IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
+├── EVG_Updater/        C# Tool for updating Firmware over IEC 62386-105 compatible communication
 ├── Hardware/           PCB Schematics and Gerbers
 └── Simulationen/       LTspice PHY and power supply simulations
 ```
@@ -50,10 +48,6 @@ See [Firmware/README.md](Firmware/README.md) for architecture, commands, and tes
 
 IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1876 / 1920 bytes). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for 10 KB). Firmware is staged in an I2C EEPROM before committing to flash. Validates Block 0 GTIN and EVG mode ID. See [Bootloader/README.md](Bootloader/README.md).
 
-### USB Bootloader
-
-USB HID bootloader from [cnlohr's ch32v003fun](https://github.com/cnlohr/ch32v003fun/tree/master/bootloader). Pre-built binaries included; source is git-ignored. See [USB_Bootloader/README.md](USB_Bootloader/README.md).
-
 ### Hardware
 
 PCB designs (schematics, Gerbers, JLCPCB assembly files). See [Hardware/README.md](Hardware/README.md) for board descriptions and details.
@@ -63,7 +57,7 @@ PCB designs (schematics, Gerbers, JLCPCB assembly files). See [Hardware/README.m
 
 **Design goals:**
 - **Ultra-low standby (~30 mW):** When LEDs are off, the triac disconnects the external PSU entirely from mains — eliminating its standby consumption. The Controller remains fully operational, powered solely from the DALI bus (< 2 mA).
-- **Modular architecture:** The Controller is a standalone unit handling all DALI communication and signal generation. LoadBoards are interchangeable and connect via a standardized FFC interface — swap them to match different power classes without changing the Controller.
+- **Modular architecture:** The Controller is a standalone unit handling all communication and signal generation. LoadBoards are interchangeable and connect via a standardized FFC interface — swap them to match different power classes without changing the Controller.
 
 ### Simulations
 
