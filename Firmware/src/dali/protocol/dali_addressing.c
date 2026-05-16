@@ -54,10 +54,14 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
 
     case DALI_SPECIAL_INITIALISE:
         if (check_config_repeat(addr_byte, data_byte, now)) {
+            /* IEC 62386-102:2009 §12.5.1:
+             *   0x00 → all control gear
+             *   0xFF → only gear without a short address
+             *   0xAA → specific gear by short address (bit0=1, bits1..6=addr) */
             uint8_t addressed = 0;
-            if (data_byte == 0xFF) {
+            if (data_byte == 0x00) {
                 addressed = 1;
-            } else if (data_byte == 0x00) {
+            } else if (data_byte == 0xFF) {
                 addressed = (ds.short_address == 0xFF);
             } else if (data_byte & 1) {
                 addressed = (((data_byte >> 1) & 0x3F) == ds.short_address);
@@ -73,10 +77,17 @@ void dali_addressing_process_special(uint8_t addr_byte, uint8_t data_byte) {
     case DALI_SPECIAL_RANDOMISE:
         if (init_state != INIT_ENABLED) break;
         if (check_config_repeat(addr_byte, data_byte, now)) {
+            /* Rotate UID words by different amounts before XOR — prevents
+             * two chips with sequential WCH UIDs from cancelling to an
+             * identical seed (observed in 2-EVG bus scan, 2026-05-15). */
+            uint32_t uid0 = *(volatile uint32_t *)0x1FFFF7E8;
+            uint32_t uid1 = *(volatile uint32_t *)0x1FFFF7EC;
+            uint32_t uid2 = *(volatile uint32_t *)0x1FFFF7F0;
             uint32_t seed = SysTick->CNT;
-            seed ^= *(volatile uint32_t *)0x1FFFF7E8;  /* ESIG UID word 0 */
-            seed ^= *(volatile uint32_t *)0x1FFFF7EC;  /* ESIG UID word 1 */
-            seed ^= (uint32_t)ds.short_address << 16;
+            seed ^= uid0;
+            seed ^= (uid1 << 7)  | (uid1 >> 25);
+            seed ^= (uid2 << 17) | (uid2 >> 15);
+            seed ^= (uint32_t)ds.short_address << 24;
             seed ^= (uint32_t)ds.actual_level << 8;
             seed *= 1103515245UL;
             seed += 12345;

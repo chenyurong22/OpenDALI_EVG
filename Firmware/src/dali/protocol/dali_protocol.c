@@ -114,6 +114,7 @@ static void process_frame(const dali_frame_t *frame) {
         /* ── Direct arc power command ─────────────────────────────── */
         if (data_byte == 0xFF) return;
         dali_fade_stop();
+        ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
         uint8_t level = clamp_level(data_byte);
         uint32_t eff_fade_ms = dali_fade_get_effective_ms();
 
@@ -131,12 +132,14 @@ static void process_frame(const dali_frame_t *frame) {
         /* Immediate action commands */
         case DALI_CMD_OFF:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             ds.actual_level = 0;
             if (ds.arc_callback) ds.arc_callback(0);
             break;
 
         case DALI_CMD_UP:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level >= ds.max_level) break;
             if (ds.actual_level == 0) {
                 ds.actual_level = ds.min_level;
@@ -147,12 +150,14 @@ static void process_frame(const dali_frame_t *frame) {
 
         case DALI_CMD_DOWN:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level == 0 || ds.actual_level <= ds.min_level) break;
             dali_fade_start_rate(ds.min_level, dali_fade_rate_ms[ds.fade_rate]);
             break;
 
         case DALI_CMD_STEP_UP:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level == 0) ds.actual_level = ds.min_level;
             else if (ds.actual_level < ds.max_level) ds.actual_level++;
             else break;
@@ -161,6 +166,7 @@ static void process_frame(const dali_frame_t *frame) {
 
         case DALI_CMD_STEP_DOWN:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level == 0) break;
             if (ds.actual_level <= ds.min_level) {
                 ds.actual_level = 0;
@@ -172,18 +178,21 @@ static void process_frame(const dali_frame_t *frame) {
 
         case DALI_CMD_RECALL_MAX:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             ds.actual_level = ds.max_level;
             if (ds.arc_callback) ds.arc_callback(ds.max_level);
             break;
 
         case DALI_CMD_RECALL_MIN:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             ds.actual_level = ds.min_level;
             if (ds.arc_callback) ds.arc_callback(ds.min_level);
             break;
 
         case DALI_CMD_STEP_DOWN_OFF:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level == 0) break;
             if (ds.actual_level <= ds.min_level) {
                 ds.actual_level = 0;
@@ -195,6 +204,7 @@ static void process_frame(const dali_frame_t *frame) {
 
         case DALI_CMD_ON_STEP_UP:
             dali_fade_stop();
+            ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
             if (ds.actual_level == 0) {
                 ds.actual_level = ds.min_level;
             } else if (ds.actual_level < ds.max_level) {
@@ -209,6 +219,7 @@ static void process_frame(const dali_frame_t *frame) {
         case DALI_CMD_RESET:
             if (check_config_repeat(addr_byte, data_byte, now)) {
                 dali_fade_stop();
+                ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
                 ds.actual_level = 254;
                 ds.max_level = 254;
 #ifdef ONOFF_MODE
@@ -232,7 +243,6 @@ static void process_frame(const dali_frame_t *frame) {
                 ds.colour_tc = 0;
 #endif
                 ds.reset_state = 1;
-                ds.power_cycle_seen = 0;
                 if (ds.arc_callback) ds.arc_callback(ds.actual_level);
 #if EVG_HAS_DT8
                 if (ds.colour_callback)

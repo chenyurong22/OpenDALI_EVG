@@ -2,11 +2,13 @@
 
 PCB designs for the OpenDALI_EVG project.
 
+> Trademark notice — see [root README](../README.md): *DALI*, *DALI-2* etc. are DiiA trademarks; this project is an independent IEC 62386 implementation, not DiiA-certified.
+
 ## Boards
 
 ### Controller
 
-The DALI PHY and microcontroller board. Handles all DALI-2 bus communication, protocol processing, and generates the digital PWM/LED control signals. Built around the CH32V003F4U6 RISC-V microcontroller (20-pin QFN, 48 MHz, 16 KB Flash, 2 KB RAM).
+The DALI PHY and microcontroller board. Handles all DALI-bus communication (IEC 62386-101/102 compatible), protocol processing, and generates the digital PWM/LED control signals. Built around the CH32V003F4U6 RISC-V microcontroller (20-pin QFN, 48 MHz, 16 KB Flash, 2 KB RAM).
 
 The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the MCU's 3.3V logic. See `Simulationen/` for LTspice reference designs (isolated and non-isolated variants).
 

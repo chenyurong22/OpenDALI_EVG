@@ -227,7 +227,7 @@ When making changes to the firmware, always check and update all related documen
 - See `Bootloader/README.md` for full details
 
 ### DALI Bootloader — Original Vendor Protocol (WORKING)
-- Location: `DALI_Bootloader/`
+- Location: `Bootloader/`
 - Size: ~1616/1920 bytes (84% of boot area)
 - Protocol: standard DALI 16-bit forward frames with vendor-specific commands (IEC 62386-102, bytes 129–143)
 - Commands: CMD_ERASE (0x84), CMD_DATA (0x85), CMD_COMMIT (0x86), CMD_BOOT (0x87)
@@ -235,11 +235,11 @@ When making changes to the firmware, always check and update all related documen
 - I2C EEPROM staging: firmware received via DALI is stored in AT24C256 EEPROM, then copied to flash on CMD_COMMIT
 - Software entry: DALI cmd 131 (vendor-reserved, config repeat) writes RAM magic word, resets into bootloader
 - Hardware entry: hold PA1 LOW during reset
-- Build: `DALI_Bootloader/build.bat`
-- Flowchart: `DALI_Bootloader/bootloader_protocol.png` (+ `.mmd` source)
+- Build: `Bootloader/build.bat`
+- Flowchart: `Bootloader/bootloader_protocol.png` (+ `.mmd` source)
 
 ### DALI Bootloader — IEC 62386-105 Compatible (NEW)
-- Location: `DALI_Bootloader/`
+- Location: `Bootloader/`
 - Size: ~1876/1920 bytes (97.7% of boot area)
 - Protocol: 32-bit forward frames (IEC 62386-101, 7.4.3) for bulk data, standard IEC 62386-105 commands
 - Bulk transfer uses TRANSFER BLOCK DATA (0xBD) — 3 firmware bytes per frame, no per-frame response (~2.5 min for 10 KB, ~4.5x faster)
@@ -253,9 +253,9 @@ When making changes to the firmware, always check and update all related documen
 - Hardware entry: hold PA1 LOW during reset → bootloader responds YES to any subsequent START FW TRANSFER
 - Auto-reboots after successful FINISH FW UPDATE (no separate RESTART FW needed)
 - Compatible with standard DALI firmware update masters
-- Build: `DALI_Bootloader/build.bat`
-- Flowchart: `DALI_Bootloader/bootloader_protocol.png` (+ `.mmd` source)
-- See `DALI_Bootloader/README.md` for full protocol details
+- Build: `Bootloader/build.bat`
+- Flowchart: `Bootloader/bootloader_protocol.png` (+ `.mmd` source)
+- See `Bootloader/README.md` for full protocol details
 
 ### TODO: OpenKNX GW-REG1-Dali as DALI upload master
 - The **umbau** branch of [GW-REG1-Dali](https://github.com/OpenKNX/GW-REG1-Dali) (ESP32 variant) has a WebSocket JSON interface that can send arbitrary DALI frames with backward frame listening — no firmware changes needed
@@ -264,7 +264,7 @@ When making changes to the firmware, always check and update all related documen
 
 ### Pin Assignments (Bootloader vs Firmware)
 
-Both the DALI bootloader (`DALI_Bootloader/dali_bootloader.c`) and the firmware use the same DALI bus and EEPROM pins. The USB bootloader uses PD0/PD3/PD4 for USB.
+Both the DALI bootloader (`Bootloader/dali_bootloader.c`) and the firmware use the same DALI bus and EEPROM pins. The USB bootloader uses PD0/PD3/PD4 for USB.
 
 | Pin | Bootloader | Firmware |
 |-----|-----------|----------|
@@ -296,7 +296,8 @@ Subdirectories:
 | `Debug_Helpers/HIL_Setup.md` | Pin map, IPs, tool paths, sample-rate guidance |
 | `Debug_Helpers/uart_logger.py` | Continuous COM14 capture to `logs/uart_*.log` |
 | `Debug_Helpers/PWM_Test/` | Standalone CH32V003 GPIO toggle firmware + Python `send_colors.py` (KNX→Gateway→DALI→PWM end-to-end test) |
-| `Debug_Helpers/DALI_RX_Test/` | Python WS-direct DALI test scripts. `full_update.py` drives a full IEC-62386-105 firmware update with Fletcher-16 in Block 0 and periodic mid-transfer QUERY BLOCK FAULT polling |
+| `Debug_Helpers/DALI_RX_Test/` | Python WS-direct DALI test scripts. `full_update.py` is the **reference implementation** of the IEC-62386-105 update flow (Fletcher-16 in Block 0, periodic mid-transfer QUERY BLOCK FAULT) — the C# `EVG_Updater` mirrors its protocol. Use the Python script only for protocol experiments / regression checks; for actual updates use the C# tool. |
+| `EVG-Updater/` | **C# WinForms updater (.NET 8.0) — primary tool for DALI-bus firmware updates going forward.** GUI mode for interactive use, CLI mode for headless / pipeline use (e.g. `pio run && EVG_Updater.exe firmware.bin`). Configurable gateway IP, short address (0–63), GTIN, EVG mode ID. Implements the same 4-phase update protocol as `full_update.py` with semaphore-paced inflight window and QUERY BLOCK FAULT every 128 frames. See `EVG-Updater/README.md` for arguments and exit codes. |
 | `Debug_Helpers/EEPROM_Dump/` | Standalone CH32V003 firmware that streams all 32 KB of AT24C256 EEPROM over UART, plus `check_eeprom_dump.py` to verify identity block + firmware-staging byte-for-byte against `firmware.bin`. The end-of-chain verification step after a DALI BL update |
 | `Debug_Helpers/DALI_Sniffer_Host/` | USB sniffer host app |
 | `Debug_Helpers/DALI_UART_Sniffer/` | UART-based DALI sniffer |
@@ -309,11 +310,47 @@ Subdirectories:
 After a DALI-bus firmware update, the full chain (KNX → gateway → DALI → BL RX → page_buf → I2C → EEPROM staging → flash commit → user FW boots) can be byte-for-byte verified:
 
 1. **Build the firmware** with a `Build: __DATE__ __TIME__` print at boot (already in `main.c`).
-2. **Run the update**: `cd Debug_Helpers/DALI_RX_Test && python full_update.py`. Includes Fletcher-16 in Block 0 and periodic QUERY BLOCK FAULT every 500 frames.
+2. **Run the update** with the C# updater (default tool):
+   - GUI: launch `EVG-Updater/EVG_Updater/bin/.../EVG_Updater.exe` (no args), pick the `.bin` and click Update.
+   - CLI / pipeline: `EVG_Updater.exe firmware.bin [--ip ...] [--addr 0..63] [--gtin <hex>] [--mode 1..8]` — exits 0 on success, 1 on argument/connect error, 2 on update fail.
+   - For protocol-level debugging / regression: `cd Debug_Helpers/DALI_RX_Test && python full_update.py` (Python reference).
 3. **Watch the boot banner** in the UART log — the new `Build:` timestamp must match the just-built `firmware.bin`'s mtime.
 4. **Dump the EEPROM**: `cd Debug_Helpers/EEPROM_Dump && pio run -t upload`. Overwrites user flash with the dumper, which streams all 32 KB of EEPROM to UART in ~14 s.
 5. **Compare**: `python check_eeprom_dump.py` parses the latest `uart_*.log`, reconstructs the 32 KB image, and verifies identity block (magic/GTIN/mode/short_addr) + firmware-staging area at `0x0080+` byte-equal to `firmware.bin`. PASS = chain verified.
 6. **Recover**: re-flash the EVG firmware via `pio run -t upload` (in `Firmware/`) or via DALI BL again.
+
+### Bulk provisioning of blank EVGs
+
+`Firmware/flash_blank_evg.ps1` runs the full first-time programming sequence in a **polling loop** — connect blank EVGs one by one, each takes ~8 s wall-clock end-to-end:
+
+1. Bootloader → `0x1FFFF000`
+2. configurebootloader → `0x08000000` (writes option bytes)
+3. `pio run -t upload` (firmware) → `0x08000000`
+4. Verify Option Bytes (`RDPR=0xA5`, `USER=0xEF`, complement check, `OPTERR=0`, `RDPRT=0`, `STARTMODE=1`)
+
+The loop polls `wlink status` once per second; on detection it runs all four steps and prints **PASS** / **FAIL**, then waits for the chip to be removed before accepting the next one. **ESC** quits cleanly (falls back to **Ctrl+C** on hosts without raw-key support).
+
+Prerequisites:
+- WCH-LinkE programmer connected
+- `tool-wlink` and `platformio.exe` at the standard PlatformIO install paths under `%USERPROFILE%`
+- Pre-built `Bootloader/dali_bootloader.bin` (build via `Bootloader/build.bat` once) and shipped `configurebootloader.bin`
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Firmware/flash_blank_evg.ps1
+```
+
+### Oszi-GND Pitfall (DALI Bus RX Bit Errors)
+
+When debugging DALI bus signals with a single-ended scope, the GND clip placement matters:
+
+- **GND HINTER dem DALI-Gleichrichter (System-GND der EVG)** → RX-Bitfehler auf dem Bus, ~10–20 % Frame-Fehlerrate. Alle Flips sind **0 → 1** (LOW wird kurz auf HIGH gehoben), zufällig über die Bit-Positionen verteilt. Der gleiche Sniffer/EVG dekodiert ohne Oszi 100 % sauber.
+- **GND VOR dem Gleichrichter (am DALI-Bus selbst, polaritätsfrei)** → keine Probleme, Bus bleibt sauber.
+
+Vermutete Ursache: über die Schutzleiter-Schleife des Oszis fließt ein Strom durch System-GND und hebt den LOW-Pegel kurz an, was die Manchester-Sample-Punkte kippt. Der Bus selbst ist polaritätsfrei und galvanisch nicht direkt mit dem Oszi-PE verbunden, daher dort kein Effekt.
+
+**Konsequenz für Debug-Sessions:** Wenn unerklärliche RX-Fehler auftreten und ein Oszi am System-GND hängt → Tastkopf umstecken oder Differential-Probe / USB-Isolator verwenden. Vor Bug-Hunting in der RX-Firmware immer erst diesen Setup-Faktor ausschließen.
+
+**Workaround zum Debuggen mit zwei Tastköpfen:** Wenn man trotzdem auf System-GND messen will (z.B. weil man Signale auf der Sekundärseite des Gleichrichters mitschneiden muss), den **zweiten Oszi-Tastkopf-GND am DALI-Netzteil-Ausgang anklemmen**. Damit nimmt der Rückstrom über die Oszi-Masse des zweiten Probes statt über die PE-Schleife → keine Modulation des System-GND → Bus bleibt sauber. Verifiziert 2026-05-07.
 
 ## Resource Usage (RGBW default)
 

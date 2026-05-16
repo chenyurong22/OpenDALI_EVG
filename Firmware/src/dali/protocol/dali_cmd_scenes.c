@@ -13,6 +13,7 @@ void dali_scene_recall(uint8_t scene) {
     uint8_t slevel = ds.scene_level[scene];
     if (slevel == 0xFF) return;  /* MASK = not in scene */
     dali_fade_stop();
+    ds.power_cycle_seen = 0;  /* IEC 62386-102 §9.16.9 */
     slevel = clamp_level(slevel);
     uint32_t eff_fade_ms = dali_fade_get_effective_ms();
     if (slevel == 0 || eff_fade_ms == 0 || ds.actual_level == slevel) {

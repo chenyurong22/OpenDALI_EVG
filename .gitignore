@@ -17,7 +17,7 @@ Thumbs.db
 # Local archive folders (manual snapshots of working binaries / sources)
 archive/
 
-# .NET / Visual Studio (DALI_Updater)
+# .NET / Visual Studio (EVG-Updater)
 bin/
 obj/
 .vs/
@@ -70,8 +70,8 @@ obj/
 
 # Exception: pre-built bootloader binaries (needed for flashing without build toolchain)
 !USB_Bootloader/*.bin
-!DALI_Bootloader/*.bin
-!DALI_Bootloader/ch32v003fun/libgcc.a
+!Bootloader/*.bin
+!Bootloader/ch32v003fun/libgcc.a
 
 # Debug information
 *.dwo

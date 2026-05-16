@@ -1,16 +1,20 @@
 # OpenDALI_EVG
 
-A completely open-source DALI-2 Electronic Control Gear (EVG) for controlling LEDs. Built around the **CH32V003** RISC-V microcontroller.
+A completely open-source Proof of concept for a ultra low standby current **DALI-2-compatible** Electronic Control Gear (ECG/EVG) for controlling LEDs. Built around the **CH32V003** RISC-V microcontroller. Implements IEC 62386 — not certified by, affiliated with, or endorsed by the DALI Alliance (DiiA).
 
 > [!WARNING]
 > This project is a work in progress and not yet ready for production use. Hardware designs and firmware are subject to change.
 
+> [!NOTE]
+> **Trademark notice:** *DALI*, *DALI-2*, *D4i*, *DALI+* and *DiiA* are trademarks of the Digital Illumination Interface Alliance (DiiA). This project is an independent open-source implementation and compatible with the IEC 62386 standard. It is referred to as *DALI-2-compatible*, it has not undergone DiiA certification and may not be marketed as a DALI product.
+> use for educational purposes only!
+
 ## Overview
 
-This project implements a DALI-2 control gear device compliant with **IEC 62386-101** (bus/protocol) and **IEC 62386-102** (control gear commands), including **DT8 colour control** (IEC 62386-209) for RGBW and colour temperature mixing.
+This project implements a DALI-2-compatible control gear device per **IEC 62386-101** (bus/protocol) and **IEC 62386-102** (control gear commands), including **DT8 colour control** (IEC 62386-209) for RGBW and colour temperature mixing.
 
 Key highlights:
-- Full DALI-2 protocol stack in bare-metal C, under 10 KB flash
+- Full DALI-2-compatible protocol stack in bare-metal C, under 10 KB flash
 - 4-channel PWM output (RGBW) at 20 kHz with 2400-step resolution
 - WS2812/SK6812 addressable LED strip support (SPI+DMA, up to ~300 LEDs)
 - Logarithmic dimming curve per IEC 62386-102
@@ -25,7 +29,7 @@ Key highlights:
 ```
 OpenDALI_EVG/
 ├── Firmware/           CH32V003 DALI slave firmware (PlatformIO project)
-├── DALI_Bootloader/    IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
+├── Bootloader/    IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
 ├── USB_Bootloader/     USB HID bootloader (cnlohr ch32v003fun, pre-built binaries)
 ├── DALI-Master/        Pico-based DALI master for testing
 ├── Debug_Helpers/      Test scripts and tools (PowerShell, Python)
@@ -42,9 +46,9 @@ The firmware is a standalone PlatformIO project targeting the CH32V003F4U6, buil
 
 See [Firmware/README.md](Firmware/README.md) for architecture, commands, and test documentation.
 
-### DALI Bootloader
+### Bootloader
 
-IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1876 / 1920 bytes). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for 10 KB). Firmware is staged in an I2C EEPROM before committing to flash. Validates Block 0 GTIN and EVG mode ID. See [DALI_Bootloader/README.md](DALI_Bootloader/README.md).
+IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1876 / 1920 bytes). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for 10 KB). Firmware is staged in an I2C EEPROM before committing to flash. Validates Block 0 GTIN and EVG mode ID. See [Bootloader/README.md](Bootloader/README.md).
 
 ### USB Bootloader
 
@@ -54,7 +58,7 @@ USB HID bootloader from [cnlohr's ch32v003fun](https://github.com/cnlohr/ch32v00
 
 PCB designs (schematics, Gerbers, JLCPCB assembly files). See [Hardware/README.md](Hardware/README.md) for board descriptions and details.
 
-- **Controller** — DALI PHY + CH32V003 MCU board
+- **Controller** — DALI-compatible PHY + CH32V003 MCU board
 - **LoadBoard 250W** — 4-channel RGBW LED driver + AC mains switching (ACST410 triac, MOC3043)
 
 **Design goals:**
@@ -63,7 +67,7 @@ PCB designs (schematics, Gerbers, JLCPCB assembly files). See [Hardware/README.m
 
 ### Simulations
 
-LTspice simulations for the DALI PHY layer:
+LTspice simulations for the DALI-compatible PHY layer:
 - **Phy_Non-Isolated.asc** — Bus-powered PHY with direct MCU connection
 - **Phy_Isolated.asc** — Optocoupler-isolated PHY variant
 
@@ -72,7 +76,7 @@ LTspice simulations for the DALI PHY layer:
 | Parameter | Value |
 |-----------|-------|
 | MCU | CH32V003F4U6 (RISC-V, 48 MHz, 16 KB Flash, 2 KB RAM) |
-| DALI Interface | Via PHY transceiver (PC3 RX, PC4 TX) |
+| DALI-compatible Interface | Via PHY transceiver (PC3 RX, PC4 TX) |
 | PWM Channels | 4 (RGBW via TIM1, partial remap 1) |
 | Digital LED | WS2812/SK6812 via SPI1+DMA (same pin as PWM CH1, compile-time select) |
 | Supply | Bus-powered from DALI (with DC-DC converter) or external |
@@ -81,7 +85,7 @@ See [Hardware/README.md](Hardware/README.md) for the full pin assignment table a
 
 ## Status
 
-The firmware is functional and tested with a custom Pico-based DALI master. See [Firmware/Commands_Implemented.md](Firmware/Commands_Implemented.md) for a full command-by-command status table.
+The firmware is functional and tested with an OpenKNX-DALI Gateway
 
 ## License
 
