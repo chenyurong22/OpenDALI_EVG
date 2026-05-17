@@ -9,7 +9,7 @@ Implements the IEC 62386-105 firmware update protocol over 32-bit DALI forward f
 ## Requirements
 
 - .NET 8.0 SDK
-- OpenKNX GW-REG1-Dali gateway (or Lunatone DALI-2 IoT compatible) on the network
+- OpenKNX GW-REG1-Dali gateway on the network
 - Target device running OpenDALI EVG firmware with IEC 62386-105 bootloader in boot area
 
 ## Build
