@@ -26,7 +26,7 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 | PC5 | *(spare)* | — | — | Free GPIO for future use |
 | PC6 | LED1 / Red PWM **or** WS2812 data | Output | TIM1_CH1 / SPI1_MOSI | Dual-use: PWM in analog modes, SPI+DMA in digital LED modes |
 | PC7 | LED2 / Green PWM | Output | TIM1_CH2 | 20 kHz, 2400-step (11.2 bit) |
-| PD0 | *(spare)* | — | — | Free GPIO (reserved for future use; was USB-DPU pull-up in an early USB-BL prototype that was abandoned in favour of DALI-only updates) |
+| PD0 | *(spare)* | — | — | Free GPIO |
 | PD1 | SWDIO | Bidir | SWD | Single-wire debug (active during programming) |
 | PD2 | *(spare)* | — | — | Free GPIO |
 | PD3 | LED4 / White PWM | Output | TIM1_CH4 | 20 kHz, 2400-step (11.2 bit) |
@@ -46,7 +46,7 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 
 **Digital LED output** (WS2812/SK6812 modes): SPI1_MOSI on PC6 at 3 MHz, DMA-driven. Same physical pin as TIM1_CH1 — selected at compile time via `EVG_MODE_xxx`.
 
-**Firmware updates** happen over the DALI bus itself via the IEC 62386-105 bootloader at `0x1FFFF000`. PA1 held low at reset routes into the bootloader (works for POR, NRST, and SYSRESETREQ thanks to the firmware-side `boot_button_check()`). PD1 (SWDIO) is the recovery path via WCH-LinkE for chips that have lost their flash content entirely. No USB on this design.
+**Firmware updates** happen over the DALI bus itself via the IEC 62386-105 bootloader at `0x1FFFF000`. PA1 held low at reset routes into the bootloader (works for POR, NRST, and SYSRESETREQ thanks to the firmware-side `boot_button_check()`). PD1 (SWDIO) is the recovery path via WCH-LinkE for chips that have lost their flash content entirely.
 
 #### Hardware Validation
 
