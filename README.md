@@ -14,25 +14,26 @@ A completely open-source Proof of concept for a ultra low standby current **DALI
 This project implements a DALI-2-compatible control gear device per **IEC 62386-101** (bus/protocol) and **IEC 62386-102** (control gear commands), including **DT8 colour control** (IEC 62386-209) for RGBW and colour temperature mixing.
 
 Key highlights:
-- Full DALI-2-compatible protocol stack in bare-metal C, under 10 KB flash
+- Full DALI-2-compatible protocol stack in bare-metal C, ~11 KB user flash (16 KB chip)
 - 4-channel PWM output (RGBW) at 20 kHz with 2400-step resolution
 - WS2812/SK6812 addressable LED strip support (SPI+DMA, up to ~300 LEDs)
 - Logarithmic dimming curve per IEC 62386-102
 - 16 scenes, 16 groups, fade engine with configurable fade time/rate
-- Full commissioning support (INITIALISE, RANDOMISE, SEARCHADDR, PROGRAM)
-- All configuration persisted to flash (survives power cycles)
+- Full commissioning support (INITIALISE, RANDOMISE, SEARCHADDR, PROGRAM SHORT) — incl. spec-conformant DTR roles for memory bank reads (FW v0.3+)
+- All configuration persisted to AT24C256 EEPROM (deferred-write, 5 s debounce)
 - Bus-powered design possible (< 2 mA quiescent from DALI bus)
-- Over-the-air firmware updates via DALI bus (DALI bootloader)
+- Over-the-air firmware updates via DALI bus (IEC 62386-105 bootloader with Fletcher-16 payload check, auto-resume on fault)
+- Verified interop with Mi-Boxer DALI controllers and OpenKNX GW-REG1-Dali gateway
 
 ## Project Structure
 
 ```
 OpenDALI_EVG/
-├── Firmware/           CH32V003 DALI slave firmware (PlatformIO project)
-├── Bootloader/         IEC 62386-105 compatible DALI bootloader (1876 bytes, I2C EEPROM staging)
-├── EVG_Updater/        C# Tool for updating Firmware over IEC 62386-105 compatible communication
-├── Hardware/           PCB Schematics and Gerbers
-└── Simulationen/       LTspice PHY and power supply simulations
+├── Firmware/           CH32V003 DALI slave firmware (PlatformIO project, ~11.2 KB user flash)
+├── Bootloader/         IEC 62386-105 compatible DALI bootloader (1896 / 1920 B, I2C EEPROM staging)
+├── EVG-Updater/        C# WinForms tool (.NET 8) — GUI + CLI for firmware flash and bus scan
+├── Hardware/           PCB schematics, Gerbers, JLCPCB BOM/CPL (Controller V0.2 + LoadBoard V0.1)
+└── Simulations/        LTspice PHY and power supply simulations
 ```
 
 ### Firmware
@@ -46,7 +47,11 @@ See [Firmware/README.md](Firmware/README.md) for architecture, commands, and tes
 
 ### Bootloader
 
-IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1876 / 1920 bytes). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for 10 KB). Firmware is staged in an I2C EEPROM before committing to flash. Validates Block 0 GTIN and EVG mode ID. See [Bootloader/README.md](Bootloader/README.md).
+IEC 62386-105 compatible firmware-over-DALI-bus bootloader (1896 / 1920 bytes, 98.8% of the CH32V003 boot area). Uses 32-bit forward frames for bulk data transfer (3 bytes/frame, ~2.5 min for ~11 KB). Firmware is staged in AT24C256 I2C EEPROM before committing to flash. Validates Block 0 GTIN + EVG mode ID, and verifies the Block 1 firmware payload with a Fletcher-16 checksum at FINISH. On checksum mismatch the BL auto-resumes the previous user firmware (no manual recovery needed). See [Bootloader/README.md](Bootloader/README.md).
+
+### EVG-Updater
+
+C# WinForms application (.NET 8) — GUI + CLI for both **firmware flashing** (`flash <bin>`) and **bus discovery** (`scan`). The canonical update client; replaces the Python reference implementation for routine use. Talks to the OpenKNX GW-REG1-Dali gateway (or any Lunatone DALI-2 IoT compatible gateway) via WebSocket. See [EVG-Updater/README.md](EVG-Updater/README.md).
 
 ### Hardware
 
@@ -79,7 +84,9 @@ See [Hardware/README.md](Hardware/README.md) for the full pin assignment table a
 
 ## Status
 
-The firmware is functional and tested with an OpenKNX-DALI Gateway
+Firmware is functional and verified with the **OpenKNX GW-REG1-Dali gateway** end-to-end. Tested operations include addressing (INITIALISE/RANDOMISE/COMPARE/PROGRAM SHORT), all 16-bit forward commands (level control, scenes, groups, fade), DT8 colour control (RGBW + Tc), bank 0 memory reads, and IEC 62386-105 firmware updates over the bus (with Fletcher-16 integrity check and auto-resume on fault).
+
+Multi-vendor coexistence verified with Mi-Boxer DALI controllers on the same bus (2026-05-17).
 
 ## License
 

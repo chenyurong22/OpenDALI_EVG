@@ -75,3 +75,6 @@ obj/
 
 # Debug information
 *.dwo
+
+# Claude Code agent context (per-developer, not for the repo)
+CLAUDE.md

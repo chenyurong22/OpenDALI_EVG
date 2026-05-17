@@ -113,17 +113,27 @@ Example (quiet mode for scripting):
 
 ```bash
 $ EVG_Updater.exe scan --quiet
-Short  Random    GTIN          Mode  DT   FW   HW   Ours
------  --------  ------------  ----  ---  ---  ---  ----
-0      0x376F4C  3452334E0CAD  RGBW  DT8  0.3  0.1  yes
-2      0x9E706E  3452334E0CAD  ONOFF DT6  0.3  0.1  yes
+Short  Random    GTIN          Mode  DT     FW   HW   Ours
+-----  --------  ------------  ----  -----  ---  ---  ----
+0      0xCAF8CB  3452334E0CAD  RGBW  DT8    0.2  0.1  yes
+1      0x93D441  3452334E0CAD  RGBW  DT8    0.2  0.1  yes
+2      0xFE7CCA  —             ?     multi  —    —    no
 ```
 
-Underlying DALI sequence (IEC 62386-102 Ed 2.0 §11.x cmd 197): `QUERY_GEAR_PRESENT`
-on each short, then once globally `DTR1 ← 0` (bank 0) and `DTR0 ← 0x03` via the
-special commands `0xC3` / `0xA3`, then per gear 18× `READ MEMORY LOCATION` to
-walk bank 0 offsets 0x03..0x14 (post-increment of DTR0 is gear-local), plus
-`QUERY DEVICE TYPE` and `QUERY RANDOM ADDRESS (H/M/L)`.
+Underlying DALI sequence (IEC 62386-102 Ed 2.0 §11.x cmd 197): `QUERY GEAR PRESENT`
+on each short, then once globally `DTR1 ← 0` (bank 0) and `DTR0 ← 0x03` (GTIN start)
+via the special commands `0xC3` / `0xA3`, then per gear 18× `READ MEMORY LOCATION`
+to walk bank 0 offsets 0x03..0x14 (post-increment of DTR0 is gear-local, so back-to-back
+reads on the same gear walk the bank without re-setting DTR0), plus `QUERY DEVICE TYPE`
+and `QUERY RANDOM ADDRESS (H/M/L)` per gear.
+
+Devices that don't implement bank 0 (some non-conformant third-party gear like Mi-Boxer)
+appear with `—` / `?` in the bank-0-derived columns but still get their `Random` and
+device-type info from the dedicated queries.
+
+`DaliBusScanner.cs` has a `READ_INTER_FRAME_DELAY_MS` constant (default `0`, well-tested
+since the FW back-to-back-drop fix). Bump it to 100 ms as a workaround if you somehow
+encounter a regression where scan results look shifted.
 
 ## EVG Mode IDs
 
@@ -142,13 +152,15 @@ walk bank 0 offsets 0x03..0x14 (post-increment of DTR0 is gear-local), plus
 
 The update runs in 4 phases:
 
-1. **Enter Bootloader** — Send QUERY FW UPDATE FEATURES (verify device supports updates), then START FW TRANSFER (config repeat, 2x within 100ms). Device responds YES and resets into bootloader.
+1. **Enter Bootloader** — Send QUERY FW UPDATE FEATURES (verify device supports updates), then START FW TRANSFER (config repeat, 2× within 100 ms). Device responds YES and resets into bootloader.
 
-2. **Block 0 Validation** — Send BEGIN BLOCK 0 followed by TRANSFER BLOCK DATA frames containing GTIN and device key (EVG mode ID). Bootloader validates against EEPROM identity. QUERY BLOCK FAULT to check.
+2. **Block 0 Validation** — Send BEGIN BLOCK 0 followed by TRANSFER BLOCK DATA frames containing GTIN, device key (EVG mode ID), and the pre-computed Fletcher-16 of the firmware payload at offsets `0x2C` / `0x2D`. The bootloader validates GTIN + mode against EEPROM identity. Updater polls `QUERY BLOCK FAULT` once at the end of this phase — that's the only window where the BL's `blockFault` flag can reflect a Block-0 fault (BEGIN BLOCK 1 wipes it).
 
-3. **Firmware Transfer** — Send BEGIN BLOCK 1, then TRANSFER BLOCK DATA frames (3 firmware bytes per frame). Data is staged in AT24C256 EEPROM (32 KB, starting at 0x0080).
+3. **Firmware Transfer** — Send BEGIN BLOCK 1, then TRANSFER BLOCK DATA frames (3 firmware bytes per frame, ~3,600 frames for ~11 KB firmware). Data is staged in AT24C256 EEPROM (starting at 0x0080). **No mid-transfer polls** — they're structurally dead (BL's `blockFault` flag can only be set during Block-0 reception or at FINISH, never during Block-1 reception; payload integrity is verified inside the FINISH handler).
 
-4. **Commit** — Send FINISH FW UPDATE (config repeat). Bootloader copies EEPROM staging area to flash and reboots into new firmware.
+4. **Commit** — Send FINISH FW UPDATE (config repeat). The bootloader compares its accumulated Fletcher-16 against the expected value from Block 0:
+   - Match: `flush_to_eeprom()` + `copy_eeprom_to_flash()` + auto-reboot into new firmware. Bus stays silent → updater sees `null` timeout → `SUCCESS`.
+   - Mismatch: BL sends `0xFF` (= YES, "not done"), then auto-reboots into the existing firmware (flash untouched). Updater receives `0xFF` → reports `FAILED: Fletcher mismatch, re-run flash`.
 
 ## Gateway API
 
@@ -189,9 +201,13 @@ EVG-Updater/
     └── DaliBusScanner.cs         Read-only bus scan (shorts 0..63, bank 0, random address)
 ```
 
-The protocol flow mirrors the proven Python reference implementation
-`Debug_Helpers/DALI_RX_Test/full_update.py`: a background reader task
+The protocol flow mirrors the proven Python reference implementation at
+`Debug_Helpers/DALI_Bootloader_full_update.py`: a background reader task
 continuously drains gateway responses, while a semaphore-based sliding
-window (PACE_INFLIGHT = 4) keeps unacked daliFrame frames bounded so the
-gateway's outgoing TCP buffer cannot deadlock. Phase 3 also probes
-`QUERY BLOCK FAULT` every 128 frames to abort a doomed transfer early.
+window (`PACE_INFLIGHT = 4`) keeps unacked `daliFrame` frames bounded so the
+gateway's outgoing TCP buffer cannot deadlock. Phase 3 has no mid-transfer
+polls — they were removed in 2026-05-17 after analysis showed the BL's
+`blockFault` flag is structurally incapable of reflecting Block-1 payload
+problems during transfer (cleared by BEGIN BLOCK 1, only re-set inside the
+FINISH handler). Payload integrity is verified by Phase 4's FINISH-response
+check (`0xFF` = explicit Fletcher fault, `null`/timeout = success).

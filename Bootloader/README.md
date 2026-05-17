@@ -2,7 +2,7 @@
 
 Firmware-over-DALI-bus bootloader using 32-bit forward frames as specified in IEC 62386-105:2020. Fits in the 1920-byte boot area. Receives firmware via the DALI bus protocol, stages it in an external I2C EEPROM, validates device identity via Block 0, then copies to internal flash.
 
-**~1876 / 1920 bytes (97.7%)** — interoperates with IEC 62386-105 compatible firmware-update masters.
+**1,896 / 1,920 bytes (98.8%)** — interoperates with IEC 62386-105 compatible firmware-update masters.
 
 > Trademark notice — see [root README](../README.md): *DALI*, *DALI-2* etc. are DiiA trademarks; this project is an independent IEC 62386 implementation, not DiiA-certified.
 
@@ -13,7 +13,8 @@ Firmware-over-DALI-bus bootloader using 32-bit forward frames as specified in IE
 - **Block 0 validation**: GTIN (6 bytes) and Device key byte 0 (EVG mode ID) are compared against values stored in EEPROM by the firmware. Mismatch → QUERY BLOCK FAULT returns YES → master aborts
 - **Fletcher-16 integrity check**: Block 0 also carries a 2-byte Fletcher-16 of the firmware payload at positions `0x2C`/`0x2D`. The bootloader accumulates `fa`/`fb` over every received Block 1 firmware byte and compares against the expected value at FINISH. Mismatch → flash commit aborted, master sees BLOCK FAULT
 - Block 1..n firmware data is extracted from the block structure (headers and trailing CRC skipped) and streamed to the I2C EEPROM staging area
-- On FINISH FW UPDATE (if no fault): EEPROM contents are copied to internal flash, then device auto-reboots
+- On FINISH FW UPDATE (no fault): EEPROM contents are copied to internal flash, then device auto-reboots into the new firmware (silent on the bus — master sees timeout)
+- On FINISH FW UPDATE (Fletcher mismatch): BL sends `0xFF` (= YES, "not done") as an explicit fault signal, then auto-resumes the **existing** user firmware that's still untouched in flash. Master can detect the explicit fault and report `UPDATE FAILED` to the user. Added 2026-05-17 to eliminate the previous failure mode where the EVG appeared "dead" until manual power-cycle.
 - Other DALI devices on the bus are **not affected** — 32-bit frames are silently ignored per IEC 62386-101
 
 ## Speed
@@ -133,19 +134,21 @@ The full chain — KNX bus → Gateway → DALI bus → bootloader → I2C EEPRO
 
 Brief recipe of the actual run that proved every step:
 
- - Pushed the new `firmware.bin` over DALI. The Uploader computes Fletcher-16 once on the host and embeds it in Block 0, then transfers ~3 600 BLOCK_DATA frames in ~3 minutes. Mid-transfer health-check via QUERY BLOCK FAULT every 500 frames.
- - Flashed Firmware came online.
- - Dumped AT24C256 over UART, checked against the FW-Binary byte-for-byte. All 10 772 firmware bytes matched, trailing region clean.
+ - Pushed the new `firmware.bin` over DALI. The Uploader computes Fletcher-16 once on the host and embeds it in Block 0, then transfers ~3 600 BLOCK_DATA frames in ~2.5 minutes.
+ - Flashed firmware came online (verified via boot-banner `Build:` timestamp on UART).
+ - Dumped AT24C256 over UART, checked against the FW-Binary byte-for-byte. All ~11 KB firmware bytes matched, trailing region clean.
 
 ### Driving an update from a host PC
 
-The Host-Updater Application implements the full IEC 62386-105 sequence and pushes a `firmware.bin` over the gateway WebSocket API:
+The `EVG-Updater` C# application is the canonical update client. It implements the full IEC 62386-105 sequence and pushes a `firmware.bin` over the gateway WebSocket API:
 
-1. Pre-computes Fletcher-16 over the firmware payload and embeds it in Block 0 at positions `0x2C`/`0x2D`
-2. Sends START FW TRANSFER → Block 0 (with GTIN, mode, Fletcher-expected) → Block 1 firmware bytes → FINISH
-3. **Polls QUERY BLOCK FAULT every 500 frames** during Phase C — if the bootloader reports a fault mid-transfer, the script aborts early instead of pumping bytes into a doomed transfer
+1. Pre-computes Fletcher-16 over the firmware payload and embeds it in Block 0 at positions `0x2C` / `0x2D`
+2. Sends START FW TRANSFER → Block 0 (with GTIN, mode, Fletcher-expected) → polls QUERY BLOCK FAULT (catches GTIN/mode mismatch before pumping ~11 KB of payload) → Block 1 firmware bytes → FINISH FW UPDATE
+3. Checks FINISH response — `0xFF` = explicit Fletcher fault from BL (commit aborted, EVG auto-resumed previous FW), `null`/timeout = success (EVG silently rebooted into new FW)
 
-After a successful run, the device auto-reboots into the new firmware.
+Mid-transfer `QUERY BLOCK FAULT` polls were removed in 2026-05-17: structurally they could only catch Block-0 faults (which are checked once before Block 1 starts), since the BL's `blockFault` flag is cleared by BEGIN BLOCK 1 and only updated again inside the FINISH handler. See [[evg-bootloader-fault-semantics]] in the agent memory for the full reasoning.
+
+The Python reference implementation `Debug_Helpers/DALI_Bootloader_full_update.py` is kept for protocol experiments / regression checks; not the routine update path.
 
 ## Build
 
@@ -163,7 +166,7 @@ wlink flash --address 0x1FFFF000 dali_bootloader.bin
 
 | Resource | Value |
 |----------|-------|
-| Flash | 1,908 B / 1,920 B (99.4%) |
+| Flash | **1,896 B / 1,920 B (98.8%)** (as of 2026-05-17, includes Fletcher-16 + auto-resume-on-fault) |
 | RAM | ~150 B (stack + variables) |
 | I2C | I2C1, 100 kHz, AT24C256 at address 0x50 |
 
@@ -185,7 +188,7 @@ The firmware's `dali_phy.c` uses the same convention (`BSHR` = active, `BCR` = i
 | `build.bat` | Build script using PlatformIO toolchain |
 | `bootloader.ld` | Linker script (boot area: 0x00000000, 1920 bytes) |
 | `ch32v003fun/` | Dependencies: `ch32v003fun.h` + `libgcc.a` |
-| `dali_bootloader.bin` | Pre-built binary (~1876 bytes) |
+| `dali_bootloader.bin` | Pre-built binary (1,896 bytes) |
 | `configurebootloader.bin` | Option bytes configurator (run once per chip) |
 | `flash.bat` | Flash bootloader to boot area via WCH-LinkE |
 | `bootloader_protocol.mmd` | Protocol sequence diagram (Mermaid source) |

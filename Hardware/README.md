@@ -10,27 +10,27 @@ PCB designs for the OpenDALI_EVG project.
 
 The DALI PHY and microcontroller board. Handles all DALI-bus communication (IEC 62386-101/102 compatible), protocol processing, and generates the digital PWM/LED control signals. Built around the CH32V003F4U6 RISC-V microcontroller (20-pin QFN, 48 MHz, 16 KB Flash, 2 KB RAM).
 
-The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the MCU's 3.3V logic. See `Simulationen/` for LTspice reference designs (isolated and non-isolated variants).
+The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the MCU's 3.3V logic. See [`../Simulations/`](../Simulations/) for LTspice reference designs (isolated and non-isolated variants).
 
 #### Pin Assignment, CH32V003F4U6
 
 | Pin | Function | Direction | Peripheral | Notes |
 |-----|----------|-----------|------------|-------|
-| PA1 | Boot button | Input | GPIO | Active low at reset → enter USB bootloader |
+| PA1 | Boot button | Input | GPIO | Active low at reset → enter DALI bootloader (also routed through firmware's `boot_button_check()` on NRST/SYSRESETREQ) |
 | PA2 | PSU Control | Output | GPIO | HIGH = external PSU on, LOW = off |
 | PC0 | LED3 / Blue PWM | Output | TIM1_CH3 | 20 kHz, 2400-step (11.2 bit) |
-| PC1 | I2C SDA | Bidir | I2C1 | Reserved for AT24C256C EEPROM |
-| PC2 | I2C SCL | Output | I2C1 | Reserved for AT24C256C EEPROM |
+| PC1 | I2C SDA | Bidir | I2C1 | AT24C256C EEPROM (persistence + firmware staging) |
+| PC2 | I2C SCL | Output | I2C1 | AT24C256C EEPROM |
 | PC3 | DALI RX | Input | EXTI3 | From PHY RX_OUT, both-edge interrupt |
 | PC4 | DALI TX | Output | GPIO | To PHY TX_IN, Manchester encode |
 | PC5 | *(spare)* | — | — | Free GPIO for future use |
 | PC6 | LED1 / Red PWM **or** WS2812 data | Output | TIM1_CH1 / SPI1_MOSI | Dual-use: PWM in analog modes, SPI+DMA in digital LED modes |
 | PC7 | LED2 / Green PWM | Output | TIM1_CH2 | 20 kHz, 2400-step (11.2 bit) |
-| PD0 | USB D+ Pull-Up | Output | GPIO | Directly driven by bootloader for USB enumeration |
+| PD0 | *(spare)* | — | — | Free GPIO (reserved for future use; was USB-DPU pull-up in an early USB-BL prototype that was abandoned in favour of DALI-only updates) |
 | PD1 | SWDIO | Bidir | SWD | Single-wire debug (active during programming) |
-| PD2 | USB D- | Bidir | GPIO (bit-bang) | USB Low-Speed, active only in bootloader |
+| PD2 | *(spare)* | — | — | Free GPIO |
 | PD3 | LED4 / White PWM | Output | TIM1_CH4 | 20 kHz, 2400-step (11.2 bit) |
-| PD4 | USB D+ | Bidir | GPIO (bit-bang) | USB Low-Speed, active only in bootloader |
+| PD4 | *(spare)* | — | — | Free GPIO |
 | PD5 | Debug UART TX | Output | USART1_TX | 115200 baud, via WCH-LinkE bridge |
 | PD6 | Debug UART RX | Input | USART1_RX | 115200 baud, available for debug input |
 | PD7 | NRST | Input | Reset | Active low hardware reset |
@@ -46,7 +46,7 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 
 **Digital LED output** (WS2812/SK6812 modes): SPI1_MOSI on PC6 at 3 MHz, DMA-driven. Same physical pin as TIM1_CH1 — selected at compile time via `EVG_MODE_xxx`.
 
-**USB** (bootloader only): PD4 (D+), PD2 (D-), PD0 (DPU). Active only when boot button (PA1) is held low during reset. Do NOT connect USB while the EVG is on a DALI bus.
+**Firmware updates** happen over the DALI bus itself via the IEC 62386-105 bootloader at `0x1FFFF000`. PA1 held low at reset routes into the bootloader (works for POR, NRST, and SYSRESETREQ thanks to the firmware-side `boot_button_check()`). PD1 (SWDIO) is the recovery path via WCH-LinkE for chips that have lost their flash content entirely. No USB on this design.
 
 #### Hardware Validation
 

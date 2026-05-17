@@ -93,7 +93,7 @@ public class DaliBusScanner
     // Set to 0 for "as fast as the gateway can send" (the historical default).
     // Higher values give the gear more recovery time between forward frames —
     // use to diagnose suspected gear-side back-to-back reception problems.
-    private const int READ_INTER_FRAME_DELAY_MS = 100;
+    private const int READ_INTER_FRAME_DELAY_MS = 0;
 
     private readonly DaliGateway _gateway;
 

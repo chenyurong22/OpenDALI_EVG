@@ -37,10 +37,16 @@ typedef enum {
     TX_START_HI,
     TX_BIT_1ST,
     TX_BIT_2ND,
+    /* Stop condition: ≥ 2 400 µs of idle = ~5.76 Te (IEC 62386-101 Table 16).
+     * 6 Te (2.5 ms) keeps the gear spec-conformant. The bus is already driven
+     * idle here, so the EXTI RX guard relaxation (see dali_isr_rx_edge) lets
+     * an incoming master forward edge interrupt this period safely. */
     TX_STOP1,
     TX_STOP2,
     TX_STOP3,
-    TX_STOP4
+    TX_STOP4,
+    TX_STOP5,
+    TX_STOP6
 } tx_state_t;
 
 /* ── RX state ────────────────────────────────────────────────────── */
@@ -98,13 +104,28 @@ static void push_halfbit(uint8_t bit) {
  *  ISR: EXTI edge on PC0 (DALI RX)                                   *
  * ================================================================== */
 void dali_isr_rx_edge(void) {
-    if (tx_state != TX_IDLE) return;
+    /* Block RX only while we are *actively* driving the bus (settle through
+     * data bits). The TX_STOP1..4 states no longer touch the bus actively —
+     * they just count down 4 Te before tx_state returns to TX_IDLE — so an
+     * incoming master forward edge during that window must be accepted, or
+     * the next forward frame is silently dropped (DTR0 doesn't increment on
+     * the gear side → master reads come back shifted). See memory note
+     * "evg-back-to-back-forward-drops" for the diagnostic trace. */
+    if (tx_state != TX_IDLE && tx_state < TX_STOP1) return;
 
     uint16_t capture = (uint16_t)(TIM2->CNT);
     uint8_t bus_low = rx_bus_is_active();
     uint16_t dt = capture - rx_last_capture;
 
-    if (dt < 200) return;
+    /* Debounce filter for spurious glitches: only meaningful mid-frame, where
+     * rx_last_capture was updated recently by a real half-bit edge. In RX_IDLE
+     * the value is stale (set during the previous frame, possibly tens of ms
+     * ago) and the uint16_t dt wraps every 65.5 ms (TIM2 ARR = 65535). If the
+     * master happens to send the next forward ~65.5 ms after the previous
+     * forward's last edge, dt wraps to a small value and we'd incorrectly drop
+     * the start edge — frame then receives bitlen short by 1 and gets discarded
+     * by the protocol layer. See memory "evg-back-to-back-forward-drops". */
+    if (rx_state != RX_IDLE && dt < 200) return;
 
     rx_last_edge_ms = millis();
 
@@ -221,7 +242,9 @@ void dali_isr_tx_tick(void) {
     case TX_STOP1: tx_drive_idle(); tx_state = TX_STOP2; break;
     case TX_STOP2: tx_drive_idle(); tx_state = TX_STOP3; break;
     case TX_STOP3: tx_drive_idle(); tx_state = TX_STOP4; break;
-    case TX_STOP4:
+    case TX_STOP4: tx_drive_idle(); tx_state = TX_STOP5; break;
+    case TX_STOP5: tx_drive_idle(); tx_state = TX_STOP6; break;
+    case TX_STOP6:
         tx_drive_idle();
         tx_state = TX_IDLE;
         TIM2->DMAINTENR &= ~TIM_IT_CC2;
