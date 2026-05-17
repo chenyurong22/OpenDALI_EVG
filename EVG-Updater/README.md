@@ -1,10 +1,10 @@
 # DALI-bus Firmware Updater
 
-C# WinForms application for updating and inspecting OpenDALI EVG devices via the DALI bus, using an OpenKNX GW-REG1-Dali gateway (Lunatone DALI-2 IoT API compatible).
+C# WinForms application for updating and inspecting OpenDALI EVG devices via the DALI bus, using an OpenKNX GW-REG1-Dali gateway.
 
 Implements the IEC 62386-105 firmware update protocol over 32-bit DALI forward frames, plus a read-only bus scan that probes shorts 0..63 and reads bank 0 identity.
 
-> Trademark notice — see [root README](../README.md): *DALI*, *DALI-2* etc. are DiiA trademarks; this project is an independent IEC 62386 implementation, not DiiA-certified.
+> Trademark notice — see [root README](../README.md): *DALI*, *DALI-2* etc. are DiiA trademarks; this project is an independent IEC 62386 implementation, not DiiA-certified. Educational purposes only
 
 ## Requirements
 
@@ -162,28 +162,6 @@ The update runs in 4 phases:
    - Match: `flush_to_eeprom()` + `copy_eeprom_to_flash()` + auto-reboot into new firmware. Bus stays silent → updater sees `null` timeout → `SUCCESS`.
    - Mismatch: BL sends `0xFF` (= YES, "not done"), then auto-reboots into the existing firmware (flash untouched). Updater receives `0xFF` → reports `FAILED: Fletcher mismatch, re-run flash`.
 
-## Gateway API
-
-Communication uses the Lunatone DALI-2 IoT WebSocket API (protocol v3.0). The gateway sends/receives JSON messages over `ws://<ip>`.
-
-Send a DALI frame:
-```json
-{
-  "type": "daliFrame",
-  "data": {
-    "line": 0,
-    "numberOfBits": 32,
-    "mode": {
-      "sendTwice": false,
-      "waitForAnswer": true,
-      "priority": 3
-    },
-    "daliData": [0, 251, 5, 0]
-  }
-}
-```
-
-API documentation: `references/89453886_DALI2_IOT_API_Dokumentation_GER_M0023.pdf`
 
 ## Project Structure
 
@@ -200,14 +178,3 @@ EVG-Updater/
     ├── DaliBootloader.cs         IEC 62386-105 protocol state machine (4-phase update)
     └── DaliBusScanner.cs         Read-only bus scan (shorts 0..63, bank 0, random address)
 ```
-
-The protocol flow mirrors the proven Python reference implementation at
-`Debug_Helpers/DALI_Bootloader_full_update.py`: a background reader task
-continuously drains gateway responses, while a semaphore-based sliding
-window (`PACE_INFLIGHT = 4`) keeps unacked `daliFrame` frames bounded so the
-gateway's outgoing TCP buffer cannot deadlock. Phase 3 has no mid-transfer
-polls — they were removed in 2026-05-17 after analysis showed the BL's
-`blockFault` flag is structurally incapable of reflecting Block-1 payload
-problems during transfer (cleared by BEGIN BLOCK 1, only re-set inside the
-FINISH handler). Payload integrity is verified by Phase 4's FINISH-response
-check (`0xFF` = explicit Fletcher fault, `null`/timeout = success).
