@@ -2,7 +2,7 @@
 
 Firmware-over-DALI-bus bootloader using 32-bit forward frames as specified in IEC 62386-105:2020. Fits in the 1920-byte boot area. Receives firmware via the DALI bus protocol, stages it in an external I2C EEPROM, validates device identity via Block 0, then copies to internal flash.
 
-**1,896 / 1,920 bytes (98.8%)** — interoperates with IEC 62386-105 compatible firmware-update masters.
+**1,840 / 1,920 bytes (95.8%)** (PlatformIO build, 2026-05-18) — interoperates with IEC 62386-105 compatible firmware-update masters.
 
 > Trademark notice — see [root README](../README.md): *DALI*, *DALI-2* etc. are DiiA trademarks; this project is an independent IEC 62386 implementation, not DiiA-certified.
 
@@ -154,19 +154,37 @@ The Python reference implementation `Debug_Helpers/DALI_Bootloader_full_update.p
 
 Requires PlatformIO's RISC-V toolchain (`riscv-wch-elf-gcc`). All dependencies (`ch32v003fun.h`, `libgcc.a`) are included in the `ch32v003fun/` subfolder.
 
-Double-click `build.bat` or run from command line.
+Two equivalent build paths are supported:
+
+**PlatformIO (recommended):**
+```
+pio run
+```
+Output: `.pio/build/dali_bootloader/firmware.bin`
+
+The build uses no PIO framework — only the platform's bare-metal flag set (`_bare.py` auto-load). `src/bootloader.ld` and `src/startup.S` override PIO's defaults via `board_build.ldscript` and `build_src_filter`; `trim_link_flags.py` (a PIO `post:` hook) appends `-flto` and `-Wl,--print-memory-usage` to the link line and links the vendored `ch32v003fun/libgcc.a`.
+
+**Legacy raw-GCC:**
+Double-click `build.bat` or run from command line. Output: `dali_bootloader.bin` at the project root.
+
+Both paths use the same toolchain, same sources, same linker script, same vendored libgcc.a. The PIO output is currently 56 B smaller than the build.bat output (1840 B vs 1896 B) due to `-msmall-data-limit=0` (PIO default for CH32V0) vs `=8` (build.bat).
 
 ## Flash
 
+`flash.bat` automatically picks up the PIO output if present, otherwise falls back to the legacy `dali_bootloader.bin`.
+
+Or manually:
 ```
-wlink flash --address 0x1FFFF000 dali_bootloader.bin
+wlink flash --address 0x1FFFF000 .pio/build/dali_bootloader/firmware.bin
 ```
+
+NOTE: `pio run -t upload` is **not** wired up — PIO's stock wch-link upload writes to the application area (0x08000000), not the bootloader area (0x1FFFF000). Use `flash.bat` or the manual `wlink` invocation above instead.
 
 ## Resource Usage
 
 | Resource | Value |
 |----------|-------|
-| Flash | **1,896 B / 1,920 B (98.8%)** (as of 2026-05-17, includes Fletcher-16 + auto-resume-on-fault) |
+| Flash | **1,840 B / 1,920 B (95.8%)** (PIO build, 2026-05-18; build.bat reference: 1,896 B / 1,920 B) |
 | RAM | ~150 B (stack + variables) |
 | I2C | I2C1, 100 kHz, AT24C256 at address 0x50 |
 
@@ -180,16 +198,22 @@ The firmware's `dali_phy.c` uses the same convention (`BSHR` = active, `BCR` = i
 
 ## Files
 
+Directory layout follows the PlatformIO convention (`src/` for compiled sources, `include/` for headers).
+
 | File | Description |
 |------|-------------|
-| `dali_bootloader.c` | Main bootloader source |
-| `startup.S` | Minimal startup (vector table, stack init, BSS zero) |
-| `funconfig.h` | ch32v003fun config |
-| `build.bat` | Build script using PlatformIO toolchain |
-| `bootloader.ld` | Linker script (boot area: 0x00000000, 1920 bytes) |
-| `ch32v003fun/` | Dependencies: `ch32v003fun.h` + `libgcc.a` |
-| `dali_bootloader.bin` | Pre-built binary (1,896 bytes) |
+| `platformio.ini` | PIO build config (no framework; uses `_bare.py` auto-load) |
+| `trim_link_flags.py` | PIO `post:` hook — adds `-flto`, `-Wl,--print-memory-usage`, vendored libgcc to link |
+| `build.bat` | Legacy raw-GCC build script (parallel path, kept for reference) |
+| `flash.bat` | Flash bootloader to boot area via WCH-LinkE (picks PIO or legacy `.bin`) |
+| `src/dali_bootloader.c` | Main bootloader source |
+| `src/startup.S` | Minimal startup (vector table, stack init, BSS zero) |
+| `src/bootloader.ld` | Linker script (boot area: 0x00000000, 1920 bytes) |
+| `include/funconfig.h` | ch32v003fun config |
+| `ch32v003fun/` | Vendored dependencies: `ch32v003fun.h` + `libgcc.a` |
+| `dali_bootloader.bin` | Pre-built binary from build.bat (1,896 bytes) |
+| `.pio/build/dali_bootloader/firmware.bin` | PIO build output (1,840 bytes, after `pio run`) |
 | `configurebootloader.bin` | Option bytes configurator (run once per chip) |
-| `flash.bat` | Flash bootloader to boot area via WCH-LinkE |
 | `bootloader_protocol.mmd` | Protocol sequence diagram (Mermaid source) |
 | `bootloader_protocol.png` | Rendered protocol diagram |
+| `archive/` | Backup of the verified-working production BL (source + binary) |

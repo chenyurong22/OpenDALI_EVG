@@ -7,27 +7,84 @@
 # Polls every second for an attached chip. When found -> run full sequence.
 # After success or failure -> wait for chip removal, then poll again.
 # Press ESC to quit.
+#
+# Script lives at OpenDALI_EVG/flash_blank_evg.ps1, so $PSScriptRoot is the
+# OpenDALI_EVG project root. Bootloader + Firmware are direct subfolders.
 
-$Root        = $PSScriptRoot
-$RepoRoot    = Split-Path $Root -Parent
-$Wlink       = Join-Path $env:USERPROFILE '.platformio\packages\tool-wlink\wlink.exe'
-$PioExe      = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\platformio.exe'
-$Bootloader  = Join-Path $RepoRoot 'Bootloader\dali_bootloader.bin'
-$ConfigBoot  = Join-Path $RepoRoot 'Bootloader\configurebootloader.bin'
+$Root          = $PSScriptRoot
+$Wlink         = Join-Path $env:USERPROFILE '.platformio\packages\tool-wlink\wlink.exe'
+$PioExe        = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\platformio.exe'
+$BootloaderDir = Join-Path $Root 'Bootloader'
+$FirmwareDir   = Join-Path $Root 'Firmware'
+$BootloaderPio    = Join-Path $BootloaderDir '.pio\build\dali_bootloader\firmware.bin'
+$BootloaderLegacy = Join-Path $BootloaderDir 'dali_bootloader.bin'
+$FirmwarePio      = Join-Path $FirmwareDir   '.pio\build\genericCH32V003F4P6\firmware.bin'
+$ConfigBoot       = Join-Path $BootloaderDir 'configurebootloader.bin'
 
-function Pause-OnExit {
+function Wait-ForExit {  # 'Wait' is an approved PS verb; behaviour: pause until Enter
+
     Write-Host ''
     Write-Host 'Press Enter to close window...' -ForegroundColor Yellow
     try { [void](Read-Host) } catch {}
 }
 
-# Verify all required tools/binaries exist BEFORE entering loop
-foreach ($p in @($Wlink, $PioExe, $Bootloader, $ConfigBoot)) {
+# Verify required tools + binaries exist BEFORE entering loop
+foreach ($p in @($Wlink, $PioExe, $ConfigBoot, $BootloaderDir, $FirmwareDir)) {
     if (-not (Test-Path $p)) {
         Write-Host ("ERROR: Missing file: {0}" -f $p) -ForegroundColor Red
-        Pause-OnExit
+        Wait-ForExit
         exit 1
     }
+}
+
+# Ensure a PIO project has a build artifact at $ExpectedBin; if not, runs
+# `pio run` in $ProjectDir and re-checks. Throws on build failure.
+function Invoke-EnsureBuild {
+    param(
+        [Parameter(Mandatory=$true)][string]$ProjectDir,
+        [Parameter(Mandatory=$true)][string]$ExpectedBin,
+        [Parameter(Mandatory=$true)][string]$Label
+    )
+    if (Test-Path $ExpectedBin) {
+        Write-Host ("  [{0}] build present" -f $Label) -ForegroundColor DarkGray
+        return
+    }
+    Write-Host ("  [{0}] no build artifact, compiling..." -f $Label) -ForegroundColor Yellow
+    Push-Location $ProjectDir
+    try {
+        & $PioExe run
+        if ($LASTEXITCODE -ne 0) { throw ("{0} build failed (pio exit {1})" -f $Label, $LASTEXITCODE) }
+    } finally { Pop-Location }
+    if (-not (Test-Path $ExpectedBin)) {
+        throw ("{0} build did not produce expected output: {1}" -f $Label, $ExpectedBin)
+    }
+    Write-Host ("  [{0}] build OK" -f $Label) -ForegroundColor Green
+}
+
+# Pre-flight: make sure both binaries exist before we ask anyone to plug a
+# chip in. Bootloader has a legacy fallback (build.bat output) — if present
+# we honor it without re-building. Firmware is PIO-only.
+Write-Host 'Pre-flight: verifying builds...' -ForegroundColor Cyan
+try {
+    if (Test-Path $BootloaderPio) {
+        $Bootloader    = $BootloaderPio
+        $BootloaderSrc = 'PIO build'
+        Write-Host '  [Bootloader] PIO build present' -ForegroundColor DarkGray
+    } elseif (Test-Path $BootloaderLegacy) {
+        $Bootloader    = $BootloaderLegacy
+        $BootloaderSrc = 'build.bat legacy'
+        Write-Host '  [Bootloader] using legacy build.bat output' -ForegroundColor DarkGray
+    } else {
+        Invoke-EnsureBuild -ProjectDir $BootloaderDir -ExpectedBin $BootloaderPio -Label 'Bootloader'
+        $Bootloader    = $BootloaderPio
+        $BootloaderSrc = 'PIO build (just compiled)'
+    }
+    Invoke-EnsureBuild -ProjectDir $FirmwareDir -ExpectedBin $FirmwarePio -Label 'Firmware'
+} catch {
+    Write-Host ''
+    Write-Host ('PRE-FLIGHT FAILED: {0}' -f $_.Exception.Message) -ForegroundColor Red
+    Wait-ForExit
+    exit 1
 }
 
 # ESC detection — works on real consoles; silently no-ops if redirected.
@@ -79,7 +136,7 @@ function Get-Bytes($text, $addr, $count) {
 
 function Invoke-FlashSequence {
     Write-Host ''
-    Write-Host '--- Step 1/4: bootloader -> 0x1FFFF000 ---' -ForegroundColor Cyan
+    Write-Host ('--- Step 1/4: bootloader ({0}) -> 0x1FFFF000 ---' -f $BootloaderSrc) -ForegroundColor Cyan
     & $Wlink flash --address 0x1FFFF000 $Bootloader
     if ($LASTEXITCODE -ne 0) { throw 'Bootloader flash failed' }
 
@@ -91,7 +148,7 @@ function Invoke-FlashSequence {
 
     Write-Host ''
     Write-Host '--- Step 3/4: firmware -> 0x08000000 ---' -ForegroundColor Cyan
-    Push-Location $Root
+    Push-Location $FirmwareDir
     try {
         & $PioExe run -t upload
         if ($LASTEXITCODE -ne 0) { throw 'Firmware upload failed' }
@@ -168,4 +225,4 @@ try {
 
 Write-Host ''
 Write-Host ('Done. Total chips processed: {0}' -f $count) -ForegroundColor Yellow
-Pause-OnExit
+Wait-ForExit
