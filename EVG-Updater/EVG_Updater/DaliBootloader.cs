@@ -32,12 +32,6 @@ public class DaliBootloader
     private const int BLOCK_HEADER_SIZE = 15;
     private const int BYTES_PER_FRAME   = 3;
 
-    // Probe the bootloader periodically during firmware transfer — if it has
-    // set BLOCK FAULT for any reason (heap exhausted, frame decoded weirdly,
-    // EEPROM I2C nack, …) we'd rather find out at frame 128/3581 than spend
-    // 3 minutes pumping bytes into a doomed transfer.
-    private const int CHECK_INTERVAL = 128;
-
     private readonly DaliGateway _gateway;
     private byte _deviceAddress;
 
@@ -67,7 +61,7 @@ public class DaliBootloader
         if (!await Phase1EnterBootloaderAsync(ct)) return false;
         if (!await Phase2Block0Async(firmwareBytes, gtin, evgModeId, ct)) return false;
         if (!await Phase3FirmwareAsync(firmwareBytes, ct)) return false;
-        await Phase4FinishAsync(ct);
+        if (!await Phase4FinishAsync(ct)) return false;
 
         OnLog?.Invoke("*** Firmware update sequence complete ***");
         return true;
@@ -180,6 +174,13 @@ public class DaliBootloader
         int totalFrames = (block1.Length + BYTES_PER_FRAME - 1) / BYTES_PER_FRAME;
         OnLog?.Invoke($"[Phase 3] Send {totalFrames} BLOCK_DATA frames...");
 
+        // No mid-transfer or end-of-Phase-3 QUERY_BLOCK_FAULT polls here:
+        // BEGIN BLOCK 1 clears the BL's blockFault flag, and during Block 1
+        // reception nothing sets it again — the Fletcher-16 check runs only
+        // inside the FINISH handler. The BL also stays silent on a healthy
+        // poll (no answer when flag is clear), so a "null" reply can't even
+        // distinguish "alive and OK" from "dead bus". Payload integrity is
+        // confirmed or rejected in Phase 4 via the FINISH response.
         int sent = 0;
         for (int i = 0; i < block1.Length; i += BYTES_PER_FRAME)
         {
@@ -195,52 +196,36 @@ public class DaliBootloader
 
             if (sent % 50 == 0 || sent == totalFrames)
                 OnProgress?.Invoke(sent, totalFrames);
-
-            // After every CHECK_INTERVAL frames we drain in-flight, then send
-            // QUERY BLOCK FAULT and see if anything comes back.
-            // Silence (null) = healthy, 0xFF = abort early.
-            if (sent % CHECK_INTERVAL == 0 && sent != totalFrames)
-            {
-                await _gateway.DrainInflightAsync(ct: ct);
-                await Task.Delay(50, ct);
-                var midFault = await _gateway.SendQueryAsync(
-                    new byte[] { ADDR_FW_UPDATE, OP_STANDARD, CMD_QUERY_BLOCK_FAULT, 0x00 },
-                    timeoutMs: 800, ct: ct);
-                if (midFault == 0xFF)
-                {
-                    OnLog?.Invoke($"  ERROR: bootloader signalled BLOCK FAULT at frame "
-                                + $"{sent}/{totalFrames} — aborting");
-                    return false;
-                }
-                OnLog?.Invoke($"  check OK at frame {sent}/{totalFrames}");
-            }
         }
 
         await _gateway.DrainInflightAsync(ct: ct);
         await Task.Delay(100, ct);
-
-        OnLog?.Invoke("[Phase 3] Final QUERY BLOCK FAULT...");
-        var fault = await _gateway.SendQueryAsync(
-            new byte[] { ADDR_FW_UPDATE, OP_STANDARD, CMD_QUERY_BLOCK_FAULT, 0x00 }, ct: ct);
-        if (fault == 0xFF)
-        {
-            OnLog?.Invoke("  ERROR: BLOCK FAULT on firmware block");
-            return false;
-        }
-        OnLog?.Invoke("  no fault -> firmware block validated");
+        OnLog?.Invoke($"[Phase 3] {totalFrames} BLOCK_DATA frames sent (payload Fletcher verified at FINISH).");
         return true;
     }
 
     // ─── Phase 4: FINISH FW UPDATE ────────────────────────────────────────
-    private async Task Phase4FinishAsync(CancellationToken ct)
+    // Bootloader semantics (dali_bootloader.c CMD_FINISH):
+    //   no fault → silent commit + jump to user FW  → SendQueryAsync returns null (timeout)
+    //   fault    → tx_byte(0xFF), stay in BL        → SendQueryAsync returns 0xFF
+    // So 0xFF here is an explicit FAIL signal, NOT a success ACK.
+    private async Task<bool> Phase4FinishAsync(CancellationToken ct)
     {
-        OnLog?.Invoke("[Phase 4] FINISH FW UPDATE (sendTwice; EVG reboots)...");
-        // EVG reboot means it likely won't answer — SendQueryAsync returns
-        // null on timeout, no throw. The gateway WS itself stays up.
+        OnLog?.Invoke("[Phase 4] FINISH FW UPDATE (sendTwice; EVG reboots on success)...");
         var res = await _gateway.SendQueryAsync(
             new byte[] { ADDR_FW_UPDATE, OP_STANDARD, CMD_FINISH_FW_UPDATE, 0x00 },
             sendTwice: true, timeoutMs: 3000, ct: ct);
         OnLog?.Invoke($"  finish answer: {FormatByte(res)}");
+
+        if (res == 0xFF)
+        {
+            OnLog?.Invoke("  ERROR: bootloader signalled FAULT at FINISH — Fletcher-16 mismatch.");
+            OnLog?.Invoke("  Payload corrupted on the DALI bus during Block 1 transfer.");
+            OnLog?.Invoke("  Flash was NOT modified; EVG is still in bootloader, re-run flash to retry.");
+            return false;
+        }
+        // null (timeout) is the expected success path — EVG jumped into user FW silently.
+        return true;
     }
 
     private static string FormatByte(byte? b) => b == null ? "<null>" : $"0x{b:X2}";

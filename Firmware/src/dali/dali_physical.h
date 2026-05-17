@@ -138,7 +138,7 @@
 #define DALI_CMD_QUERY_RANDOM_H     194 /* Returns randomAddress byte H */
 #define DALI_CMD_QUERY_RANDOM_M     195 /* Returns randomAddress byte M */
 #define DALI_CMD_QUERY_RANDOM_L     196 /* Returns randomAddress byte L */
-#define DALI_CMD_READ_MEMORY        197 /* Read byte at DTR2:DTR1 from memory bank, post-increments DTR1 */
+#define DALI_CMD_READ_MEMORY        197 /* IEC §9.8: read byte at bank=DTR1, offset=DTR0; DTR0 auto-incremented, DTR2 receives look-ahead */
 
 /* ── DT8 extended commands (IEC 62386-209, device type 8) ──────────
  * These are "application extended commands" (cmd 224–254), only

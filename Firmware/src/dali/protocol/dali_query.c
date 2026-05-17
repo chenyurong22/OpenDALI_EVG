@@ -98,11 +98,17 @@ void dali_query_process(uint8_t cmd) {
         break;
 
     case DALI_CMD_READ_MEMORY:
-        if (ds.dtr2 == 0 && ds.dtr1 <= DALI_BANK0_LAST_ADDR) {
-            uint8_t value = dali_bank0_read(ds.dtr1);
+        /* IEC 62386-102:2009 §9.8 / Command 197:
+         *   - memory bank is selected by DTR1
+         *   - address within bank is given by DTR0 (auto-incremented after read)
+         *   - DTR2 receives the next byte (look-ahead), if still in range
+         * We only implement bank 0. */
+        if (ds.dtr1 == 0 && ds.dtr0 <= DALI_BANK0_LAST_ADDR) {
+            uint8_t value = dali_bank0_read(ds.dtr0);
             dali_phy_send_backward(value);
-            ds.dtr0 = value;
-            if (ds.dtr1 < 0xFF) ds.dtr1++;
+            if (ds.dtr0 < DALI_BANK0_LAST_ADDR)
+                ds.dtr2 = dali_bank0_read(ds.dtr0 + 1);
+            if (ds.dtr0 < 0xFF) ds.dtr0++;
         }
         break;
 

@@ -21,6 +21,13 @@ partial class MainForm
         txtGatewayIp = new TextBox();
         btnConnect = new Button();
 
+        // Bus devices group
+        grpDevices = new GroupBox();
+        gridDevices = new DataGridView();
+        btnRescan = new Button();
+        lblOursGtin = new Label();
+        txtOursGtin = new TextBox();
+
         // Update group
         grpUpdate = new GroupBox();
         lblFirmware = new Label();
@@ -62,9 +69,51 @@ partial class MainForm
 
         grpConnection.Controls.AddRange(new Control[] { lblGatewayIp, txtGatewayIp, btnConnect });
 
+        // === Bus Devices Group ===
+        grpDevices.Text = "Bus Devices (double-click a row to load)";
+        grpDevices.Location = new Point(12, 80);
+        grpDevices.Size = new Size(560, 200);
+        grpDevices.Enabled = false;
+
+        lblOursGtin.Text = "Ours GTIN:";
+        lblOursGtin.Location = new Point(10, 22);
+        lblOursGtin.AutoSize = true;
+
+        txtOursGtin.Text = "3452334E0CAD";
+        txtOursGtin.Location = new Point(80, 19);
+        txtOursGtin.Size = new Size(130, 23);
+
+        btnRescan.Text = "Rescan";
+        btnRescan.Location = new Point(220, 18);
+        btnRescan.Size = new Size(80, 25);
+        btnRescan.Click += btnRescan_Click;
+
+        gridDevices.Location = new Point(10, 50);
+        gridDevices.Size = new Size(540, 140);
+        gridDevices.AllowUserToAddRows = false;
+        gridDevices.AllowUserToDeleteRows = false;
+        gridDevices.ReadOnly = true;
+        gridDevices.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        gridDevices.MultiSelect = false;
+        gridDevices.RowHeadersVisible = false;
+        gridDevices.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colShort",  HeaderText = "Short",     FillWeight = 50 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colRandom", HeaderText = "Long Addr", FillWeight = 90 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colGtin",   HeaderText = "GTIN",      FillWeight = 130 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMode",   HeaderText = "Mode",      FillWeight = 80 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDt",     HeaderText = "DT",        FillWeight = 40 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colFw",     HeaderText = "FW",        FillWeight = 50 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colHw",     HeaderText = "HW",        FillWeight = 50 });
+        gridDevices.Columns.Add(new DataGridViewTextBoxColumn { Name = "colOurs",   HeaderText = "Ours",      FillWeight = 50 });
+        gridDevices.CellDoubleClick += gridDevices_CellDoubleClick;
+
+        grpDevices.Controls.AddRange(new Control[] {
+            lblOursGtin, txtOursGtin, btnRescan, gridDevices
+        });
+
         // === Update Group ===
         grpUpdate.Text = "Firmware Update";
-        grpUpdate.Location = new Point(12, 80);
+        grpUpdate.Location = new Point(12, 290);
         grpUpdate.Size = new Size(560, 180);
         grpUpdate.Enabled = false;
 
@@ -131,25 +180,25 @@ partial class MainForm
         });
 
         // === Log ===
-        txtLog.Location = new Point(12, 270);
-        txtLog.Size = new Size(560, 240);
+        txtLog.Location = new Point(12, 480);
+        txtLog.Size = new Size(560, 200);
         txtLog.Multiline = true;
         txtLog.ReadOnly = true;
         txtLog.ScrollBars = ScrollBars.Vertical;
         txtLog.Font = new Font("Consolas", 9F);
 
         btnClearLog.Text = "Clear Log";
-        btnClearLog.Location = new Point(12, 516);
+        btnClearLog.Location = new Point(12, 686);
         btnClearLog.Size = new Size(80, 25);
         btnClearLog.Click += btnClearLog_Click;
 
         // === Form ===
         AutoScaleDimensions = new SizeF(7F, 15F);
         AutoScaleMode = AutoScaleMode.Font;
-        ClientSize = new Size(584, 551);
-        Controls.AddRange(new Control[] { grpConnection, grpUpdate, txtLog, btnClearLog });
+        ClientSize = new Size(584, 721);
+        Controls.AddRange(new Control[] { grpConnection, grpDevices, grpUpdate, txtLog, btnClearLog });
         Text = "DALI Firmware Updater";
-        MinimumSize = new Size(600, 590);
+        MinimumSize = new Size(600, 760);
 
         ResumeLayout(false);
     }
@@ -160,6 +209,12 @@ partial class MainForm
     private Label lblGatewayIp;
     private TextBox txtGatewayIp;
     private Button btnConnect;
+
+    private GroupBox grpDevices;
+    private DataGridView gridDevices;
+    private Button btnRescan;
+    private Label lblOursGtin;
+    private TextBox txtOursGtin;
 
     private GroupBox grpUpdate;
     private Label lblFirmware;

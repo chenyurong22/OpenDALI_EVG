@@ -408,13 +408,15 @@ int main(void) {
                 if (fa != expected_fa || fb != expected_fb)
                     blockFault = 1;     /* Fletcher mismatch -> abort commit */
                 if (blockFault) {
-                    tx_byte(0xFF);  /* YES = not done (fault) */
+                    tx_byte(0xFF);              /* YES = not done (fault) */
+												/* resume previous FW (flash untouched) */          
                 } else {
                     flush_to_eeprom();
                     copy_eeprom_to_flash();
-                    delay(BIT_CYCLES * 8);
-                    boot_usercode();
+
                 }
+				delay(BIT_CYCLES * 8);
+                boot_usercode();
                 break;
             case CMD_Q_RUNNING:
                 tx_byte(0xFF);      /* YES */

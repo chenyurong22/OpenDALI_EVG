@@ -5,7 +5,7 @@
     identifies the control gear: GTIN, firmware/hardware version, serial
     number, supported standard versions, number of logical units. The
     master accesses it via the READ MEMORY LOCATION command (cmd 197),
-    using DTR2 = bank number, DTR1 = address within bank.
+    using DTR1 = bank number, DTR0 = address within bank (see IEC §9.8).
 
     This implementation provides only bank 0 (read-only); bank 1 and
     write access are out of scope. The byte layout below follows the
