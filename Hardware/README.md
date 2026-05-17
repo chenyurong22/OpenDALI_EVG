@@ -56,7 +56,7 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 | C24 voltage under sustained DALI traffic | > 12.5V | **PASS** — 14.40V min / 14.84V max (0.44V drop at 16V supply, 32 fps) | — |
 | 3.3V rail stability under sustained traffic | Stable within CH32V003 spec (2.7–5.5V) | **PASS** — 3.42V min / 3.63V max (20mV additional ripple = noise only) | — |
 | Current consumption (firmware running) | < 2 mA | **PASS** — 1.69 mA (169mV over 100R shunt) | — |
-| PSU source switching (bus ↔ external) | Clean handover, no MCU brownout | **PASS** — verified on V0.2 hardware | — |
+| PSU source switching (BusPowered ↔ externally Powered) | No MCU brownout. Checked with an oscilloscope at C24 and C18. Circuitry around Q2 tested. | **PASS** — verified on V0.2 hardware | — |
 
 ##### DALI RX Waveform
 
