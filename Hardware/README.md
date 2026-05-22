@@ -58,11 +58,13 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 | Current consumption (firmware running) | < 2 mA | **PASS** — 1.69 mA (169mV over 100R shunt) | — |
 | PSU source switching (BusPowered ↔ externally Powered) | No MCU brownout. Checked with an oscilloscope at C24 and C18. Circuitry around Q2 tested. | **PASS** — verified on V0.2 hardware | — |
 
+
+Note: Waveform-Images are from an LeCroy LT264 with a custom visualisation. You looking at real measured waveform.
+
 ##### DALI RX Waveform
 
-Oscilloscope capture of the raw Manchester-encoded signal on PC3 (DALI RX, via PHY transceiver) during a broadcast QUERY GEAR PRESENT (0xFF 0x91) frame. 0.50V/div, 2ms/div. Signal swings 0V to 3.7V with clean edges. The 16-bit forward frame (start bit + 16 data bits) is clearly visible with correct 1200 baud timing (~833µs per bit period).
-
-![DALI RX Waveform](Controller/validation/rx_manchester_waveform.jpg)
+Oscilloscope capture of the raw Manchester-encoded signal on PC3 (DALI RX, via PHY transceiver). C1 is the raw 16V DALI Signal, C2 is the signal after the receiver on PC3.
+<img width="2000" height="993" alt="lecroy-2026-05-22T19-55-04" src="https://github.com/user-attachments/assets/76f940d1-4202-4610-8ca2-937a646bca81" />
 
 ##### C24 Voltage Stability
 
