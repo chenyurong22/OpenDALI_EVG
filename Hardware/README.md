@@ -53,13 +53,13 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 | Test | Target | Result | Evidence |
 |------|--------|--------|----------|
 | DALI RX Manchester waveform | Clean edges, correct timing | **PASS** — 3.7V swing, sharp edges, correct 1200 baud timing | See below |
-| C24 voltage under sustained DALI traffic | > 12.5V | **PASS** — 14.40V min / 14.84V max (0.44V drop at 16V supply, 32 fps) | — |
-| 3.3V rail stability under sustained traffic | Stable within CH32V003 spec (2.7–5.5V) | **PASS** — 3.42V min / 3.63V max (20mV additional ripple = noise only) | — |
+| C24 voltage under sustained DALI traffic | > 12.5V | **PASS** — 14.40V min / 14.84V max (0.44V drop at 16V supply, 32 fps) | See below |
+| 3.3V rail stability under sustained traffic | Stable within CH32V003 spec (2.7–5.5V) | **PASS** — 3.42V min / 3.63V max (20mV additional ripple = noise only) | See below |
 | Current consumption (firmware running) | < 2 mA | **PASS** — 1.69 mA (169mV over 100R shunt) | — |
 | PSU source switching (BusPowered ↔ externally Powered) | No MCU brownout. Checked with an oscilloscope at C24 and C18. Circuitry around Q2 tested. | **PASS** — verified on V0.2 hardware | — |
 
 
-Note: Waveform-Images are from an LeCroy LT264 with a custom visualisation. You looking at real measured waveform.
+**Note**: Waveform-Images are from an LeCroy LT264 with a custom visualisation. You looking at real measured waveforms.
 
 ##### DALI RX Waveform
 
@@ -76,16 +76,21 @@ Voltage across C24 (DALI bus power supply decoupling) while rapidly sending DALI
 
 **Result (2026-05-02):**
 - Bus supply voltage: 16V
-- Maximum at C24: **14.84V**
-- Minimum at C24: **14.40V**
-- Voltage drop: **0.44V** (well within 3.5V budget)
-- **PASS** — extrapolated minimum at 9.5V bus: ~9.06V (above 6V threshold)
+- Maximum at C24: **15.4V**
+- Minimum at C24: **14.8V**
+- Voltage drop: **0.6V** (well within 3.5V budget)
+- **PASS** — extrapolated minimum at 9.5V bus: ~8.9V (above 6V threshold)
 
 
 **3.3V rail (after buck converter):**
 - No traffic: 3.63V max / 3.44V min
 - Under sustained traffic (32 fps): 3.63V max / 3.42V min
 - **Stable** — only 20mV additional ripple under load. CH32V003 operating range is 2.7–5.5V, so 3.42V is well within spec.
+
+Note: All Channels have different V/div settings.<br>
+C1: DALI bus, you can see sustained heavy traffic. C2: Voltage at Capacitor C24 (before the Buck). C3:. Voltage at 3.3V Rail after the Buck.
+<img width="2000" height="993" alt="lecroy-2026-05-22T20-21-50" src="https://github.com/user-attachments/assets/f04c51c8-fded-4714-8699-d7472f81fe63" />
+
 
 ##### Current Consumption
 
