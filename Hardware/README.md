@@ -38,6 +38,8 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 
 **Digital LED output** (WS2812/SK6812 modes): SPI1_MOSI on PC6 at 3 MHz, DMA-driven. Same physical pin as TIM1_CH1 — selected at compile time via `EVG_MODE_xxx`.
 
+> **⚠ Galvanic isolation is MANDATORY.** AC-mains switching of the 250 W load board was tested on real hardware: the LED-power domain **must be galvanically isolated** from the DALI/MCU domain. The isolation barrier lives on the **load board**. The J4 ribbon connector is the controller↔load-board interface that feeds the isolator's input side.
+
 #### J4 — Controller ↔ LoadBoard ribbon connector (10-pin FFC, 0.5 mm pitch)
 
 Pins 9 and 10 are dual-function (PWM **or** SPI), selected by the controller's `EVG_MODE` at compile time — so the same connector drives either a direct-PWM load board or a digital (SPI) load board with no controller hardware change:
@@ -142,8 +144,6 @@ LED driver and AC power switching board. Connects to the Controller via a 10-pin
 - Mains switching for controlling the LED AC/DC Powersupply
 - Power limits for the connected PSU: **max 1.2 A continuous** (without airflow), **max 3 A continuous** (with active airflow over the triac)
 - 4-Channel PWM LED Driver (RGBW)
-
-> **⚠ Galvanic isolation is MANDATORY (decided 2026-06-07).** AC-mains switching of the 250 W load board was tested on real hardware: the LED-power domain **must be galvanically isolated** from the DALI/MCU domain. The isolation barrier lives on the **load board** (so the controller stays simple and DALI-bus-powered); the J4 ribbon connector is the controller↔load-board interface that feeds the isolator's input side. See the controller's `CLAUDE.md` → *Galvanic separation* for the isolator selection (Route A: bus-powered quad isolator ISO7040/π140E31S; Route B: isolated DC-DC + off-bus isolator) and the DALI 2 mA bus-current budget that constrains the part choice.
 
 
 ## Manufacturing
