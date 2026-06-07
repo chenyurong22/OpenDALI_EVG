@@ -21,7 +21,7 @@ Key highlights:
 - 16 scenes, 16 groups, fade engine with configurable fade time/rate
 - Full commissioning support (INITIALISE, RANDOMISE, SEARCHADDR, PROGRAM SHORT) — incl. spec-conformant DTR roles for memory bank reads (FW v0.3+)
 - All configuration persisted to AT24C256 EEPROM (deferred-write, 5 s debounce)
-- Bus-powered design possible (< 2 mA quiescent from DALI bus)
+- Bus-powered: the MCU runs entirely from the DALI bus (< 2 mA quiescent)
 - Over-the-air firmware updates via DALI bus (IEC 62386-105 bootloader with Fletcher-16 payload check, auto-resume on fault)
 - Verified interop with Mi-Boxer DALI controllers and OpenKNX GW-REG1-Dali gateway
 
@@ -78,7 +78,7 @@ LTspice simulations for the DALI-compatible PHY layer:
 | DALI-compatible Interface | Via PHY transceiver (PC3 RX, PC4 TX) |
 | PWM Channels | 4 (RGBW via TIM1, partial remap 1) |
 | Digital LED | WS2812/SK6812 via SPI1+DMA (same pin as PWM CH1, compile-time select) |
-| Supply | Bus-powered from DALI (with DC-DC converter) or external |
+| Supply | Bus-powered from the DALI bus only (DC-DC converter) — MCU is always bus-powered |
 
 See [Hardware/README.md](Hardware/README.md) for the full pin assignment table and board details.
 

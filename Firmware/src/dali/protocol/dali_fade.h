@@ -29,4 +29,17 @@ uint8_t dali_fade_is_running(void);
 /* Compute effective fade time in ms (standard fade_time, or extended). */
 uint32_t dali_fade_get_effective_ms(void);
 
+/* ── DT8 colour crossfade (IEC 62386-209) ───────────────────────────
+ * Fade the active colour (ds.colour_actual[]) toward `target` over
+ * duration_ms, running in parallel with any brightness fade. Stepped
+ * from dali_fade_tick(). If duration_ms == 0 or the colour is already
+ * at target, it is applied instantly. Only defined when EVG_HAS_DT8. */
+void dali_fade_colour_start(const volatile uint8_t *target, uint32_t duration_ms);
+
+/* Stop a running colour fade immediately (colour stays at current). */
+void dali_fade_colour_stop(void);
+
+/* Returns 1 if a colour fade is currently in progress. */
+uint8_t dali_fade_colour_is_running(void);
+
 #endif /* _DALI_FADE_H */

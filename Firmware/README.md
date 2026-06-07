@@ -88,7 +88,7 @@ CH32V003F4U6 (QFN20, 48 MHz, 16 KB Flash, 2 KB RAM) with DALI PHY transceiver. T
 | PC2 | I2C SCL | I2C1 | Reserved for AT24C256C EEPROM |
 | PC3 | DALI RX | EXTI3 | From PHY RX_OUT, both-edge interrupt |
 | PC4 | DALI TX | GPIO output | To PHY TX_IN, Manchester encode |
-| PC5 | *(spare)* | — | Free GPIO |
+| PC5 | SPI1 SCK → J4.3 | SPI1 | SPI clock to the load board (ribbon J4 pin 3); unused in direct-PWM modes |
 | PC6 | LED1 / Red PWM **or** WS2812 | TIM1_CH1 / SPI1_MOSI | Dual-use: PWM or SPI+DMA (compile-time) |
 | PC7 | LED2 / Green PWM | TIM1_CH2 | 20 kHz, 2400-step |
 | PD0 | *(spare)* | — | Free GPIO (was USB D+ pull-up in old USB-BL prototype; current BL is DALI-only) |

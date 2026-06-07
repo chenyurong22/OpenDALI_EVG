@@ -238,6 +238,7 @@ static void process_frame(const dali_frame_t *frame) {
                 for (uint8_t i = 0; i < 4; i++)
                     ds.colour_actual[i] = 254;
 #if EVG_HAS_DT8
+                dali_fade_colour_stop();
                 for (uint8_t i = 0; i < 4; i++)
                     ds.colour_temp[i] = 254;
                 ds.colour_tc = 0;

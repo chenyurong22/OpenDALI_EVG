@@ -23,6 +23,22 @@ static volatile uint8_t     target_level = 0;
 static volatile uint16_t    fade_ms_per_step = 0;
 static volatile uint32_t    last_step_ms = 0;
 
+#if EVG_HAS_DT8
+/* ── Colour crossfade state (module-private) ─────────────────────────
+ * Independent of the brightness fade above; both can run concurrently.
+ * The colour fade linearly interpolates each RGBW channel from its value
+ * at fade start toward the target. The number of steps equals the largest
+ * per-channel distance, so the fastest-moving channel advances one unit
+ * per step and every channel arrives on its target at the final step. */
+static volatile uint8_t     colour_fade_running = 0;
+static volatile uint8_t     colour_start[4];
+static volatile uint8_t     colour_target[4];
+static volatile uint16_t    colour_total_steps = 0;
+static volatile uint16_t    colour_step = 0;
+static volatile uint16_t    colour_ms_per_step = 0;
+static volatile uint32_t    colour_last_step_ms = 0;
+#endif
+
 /* ================================================================== *
  *  get_ext_fade_time_ms() — DALI-2 extended fade time                 *
  * ================================================================== */
@@ -77,24 +93,98 @@ void dali_fade_stop(void) {
     fade_running = 0;
 }
 
-void dali_fade_tick(void) {
-    if (!fade_running) return;
+#if EVG_HAS_DT8
+/* ================================================================== *
+ *  COLOUR CROSSFADE (DT8) — runs in parallel with the brightness fade *
+ * ================================================================== */
+
+void dali_fade_colour_start(const volatile uint8_t *target, uint32_t duration_ms) {
+    colour_fade_running = 0;
+
+    uint16_t max_delta = 0;
+    for (uint8_t i = 0; i < 4; i++) {
+        uint8_t s = ds.colour_actual[i];
+        uint8_t t = target[i];
+        uint16_t d = (s > t) ? (uint16_t)(s - t) : (uint16_t)(t - s);
+        if (d > max_delta) max_delta = d;
+        colour_start[i]  = s;
+        colour_target[i] = t;
+    }
+
+    /* No fade time, or nothing to change → apply instantly. */
+    if (duration_ms == 0 || max_delta == 0) {
+        for (uint8_t i = 0; i < 4; i++)
+            ds.colour_actual[i] = target[i];
+        if (ds.colour_callback)
+            ds.colour_callback((const uint8_t *)ds.colour_actual, EVG_NUM_COLOURS);
+        return;
+    }
+
+    colour_total_steps  = max_delta;
+    colour_step         = 0;
+    colour_ms_per_step  = (uint16_t)(duration_ms / max_delta);
+    if (colour_ms_per_step < 1) colour_ms_per_step = 1;
+    colour_last_step_ms = millis();
+    colour_fade_running = 1;
+}
+
+void dali_fade_colour_stop(void) {
+    colour_fade_running = 0;
+}
+
+uint8_t dali_fade_colour_is_running(void) {
+    return colour_fade_running;
+}
+
+static void colour_fade_tick(void) {
+    if (!colour_fade_running) return;
 
     uint32_t now = millis();
-    if (now - last_step_ms < fade_ms_per_step) return;
-    last_step_ms = now;
+    if (now - colour_last_step_ms < colour_ms_per_step) return;
+    colour_last_step_ms = now;
 
-    if (ds.actual_level < target_level) {
-        ds.actual_level++;
-    } else if (ds.actual_level > target_level) {
-        ds.actual_level--;
+    colour_step++;
+    if (colour_step >= colour_total_steps) {
+        /* Final step: land exactly on the target (no rounding drift). */
+        for (uint8_t i = 0; i < 4; i++)
+            ds.colour_actual[i] = colour_target[i];
+        colour_fade_running = 0;
+    } else {
+        for (uint8_t i = 0; i < 4; i++) {
+            int32_t span = (int32_t)colour_target[i] - (int32_t)colour_start[i];
+            ds.colour_actual[i] = (uint8_t)((int32_t)colour_start[i]
+                                  + (span * (int32_t)colour_step) / (int32_t)colour_total_steps);
+        }
     }
 
-    if (ds.arc_callback) ds.arc_callback(ds.actual_level);
+    if (ds.colour_callback)
+        ds.colour_callback((const uint8_t *)ds.colour_actual, EVG_NUM_COLOURS);
+}
+#endif /* EVG_HAS_DT8 */
 
-    if (ds.actual_level == target_level) {
-        fade_running = 0;
+void dali_fade_tick(void) {
+    if (fade_running) {
+        uint32_t now = millis();
+        if (now - last_step_ms >= fade_ms_per_step) {
+            last_step_ms = now;
+
+            if (ds.actual_level < target_level) {
+                ds.actual_level++;
+            } else if (ds.actual_level > target_level) {
+                ds.actual_level--;
+            }
+
+            if (ds.arc_callback) ds.arc_callback(ds.actual_level);
+
+            if (ds.actual_level == target_level) {
+                fade_running = 0;
+            }
+        }
     }
+
+#if EVG_HAS_DT8
+    colour_fade_tick();   /* advance colour crossfade (independent of brightness) */
+#endif
 }
 
 uint8_t dali_fade_is_running(void) {

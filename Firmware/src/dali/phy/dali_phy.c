@@ -101,7 +101,7 @@ static void push_halfbit(uint8_t bit) {
 }
 
 /* ================================================================== *
- *  ISR: EXTI edge on PC0 (DALI RX)                                   *
+ *  ISR: EXTI edge on PC3 (DALI RX)                                   *
  * ================================================================== */
 void dali_isr_rx_edge(void) {
     /* Block RX only while we are *actively* driving the bus (settle through

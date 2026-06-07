@@ -11,12 +11,14 @@
 ### Pin Connections
 | Signal | Pico Pin | CH32V003 Pin | LA Channel | Notes |
 |--------|----------|-------------|------------|-------|
-| DALI Bus | GPIO17 (TX) | PC0 (RX) | D0 | Via DALI PHY transceiver |
-| DALI Backward | GPIO16 (RX) | PC5 (TX) | D1 | Slave-to-master Manchester response via PHY |
-| LED PWM 1 | — | PD2 (TIM1_CH1) | — | 20 kHz PWM (2400 steps) |
-| LED PWM 2 | — | PA1 (TIM1_CH2) | — | 20 kHz PWM (2400 steps) |
-| LED PWM 3 | — | PC3 (TIM1_CH3) | D7 | 20 kHz PWM (2400 steps) |
-| LED PWM 4 | — | PC4 (TIM1_CH4) | — | 20 kHz PWM (2400 steps) |
+| DALI Bus | GPIO17 (TX) | PC3 (RX) | D0 | Via DALI PHY transceiver |
+| DALI Backward | GPIO16 (RX) | PC4 (TX) | D1 | Slave-to-master Manchester response via PHY |
+| LED PWM 1 | — | PC6 (TIM1_CH1) | — | 20 kHz PWM (2400 steps) |
+| LED PWM 2 | — | PC7 (TIM1_CH2) | — | 20 kHz PWM (2400 steps) |
+| LED PWM 3 | — | PC0 (TIM1_CH3) | D7 | 20 kHz PWM (2400 steps) |
+| LED PWM 4 | — | PD3 (TIM1_CH4) | — | 20 kHz PWM (2400 steps) |
+
+> **Pinout note (updated 2026-06-07):** pins below reflect the current **V0.2** controller mapping (RX=PC3, TX=PC4, PWM=PC6/PC7/PC0/PD3, SCK=PC5). Earlier captures in this file were originally taken on the **V0.1** mapping (RX=PC0, TX=PC5, PWM=PD2/PA1/PC3/PC4); the measured values (duty %, timing, PASS/FAIL) are pin-agnostic and remain valid.
 | Serial Debug | USB CDC | PD5 (USART1_TX) | — | 115200 baud |
 
 ### Logic Analyzer
@@ -121,7 +123,7 @@
 | 240 | 2794 | 2794 | 68.2% | 68.2% | PASS |
 | 254 | 4095 | 4095 | 100% | 99.6% | PASS |
 
-**Note:** All 4 channels (PD2, PA1, PC3, PC4) output the same duty cycle.
+**Note:** All 4 channels (PC6, PC7, PC0, PD3) output the same duty cycle.
 
 ---
 
@@ -242,10 +244,10 @@
 
 | Channel | Pin | TIM1 Channel | Duty Cycle | Status |
 |---------|-----|-------------|------------|--------|
-| CH1 | PD2 | TIM1_CH1 | 3.2% | PASS |
-| CH2 | PA1 | TIM1_CH2 | 3.2% | PASS |
-| CH3 | PC3 | TIM1_CH3 | 3.2% | PASS |
-| CH4 | PC4 | TIM1_CH4 | 3.2% | PASS |
+| CH1 | PC6 | TIM1_CH1 | 3.2% | PASS |
+| CH2 | PC7 | TIM1_CH2 | 3.2% | PASS |
+| CH3 | PC0 | TIM1_CH3 | 3.2% | PASS |
+| CH4 | PD3 | TIM1_CH4 | 3.2% | PASS |
 
 ---
 

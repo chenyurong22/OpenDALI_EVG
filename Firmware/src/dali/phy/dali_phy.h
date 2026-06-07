@@ -14,12 +14,12 @@
 
 /* Initialize DALI physical layer peripherals:
  * - TIM2: free-running 1 MHz counter for edge timing + output compare ISRs
- * - EXTI0 on PC0: both-edge interrupt for forward frame reception
- * - PC5: push-pull GPIO output for backward frame transmission */
+ * - EXTI3 on PC3: both-edge interrupt for forward frame reception
+ * - PC4: push-pull GPIO output for backward frame transmission */
 void dali_phy_init(void);
 
 /* ISR entry points — called from interrupt handlers in main.c */
-void dali_isr_rx_edge(void);       /* EXTI0: RX edge timestamp + decode */
+void dali_isr_rx_edge(void);       /* EXTI3: RX edge timestamp + decode */
 void dali_isr_tx_tick(void);       /* TIM2 CH2: TX Manchester waveform gen */
 void dali_isr_idle_timeout(void);  /* TIM2 CH4: end-of-frame detection */
 

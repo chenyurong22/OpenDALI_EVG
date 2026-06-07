@@ -10,8 +10,8 @@ flowchart LR
     %% ── PHY Layer ──
     subgraph PHY ["dali/phy/ — ISR context"]
         direction TB
-        RX["RX decode\nEXTI0 + TIM2\nPC0 both-edge"]
-        TX["TX encode\nTIM2 CC2\nPC5 via PHY"]
+        RX["RX decode\nEXTI3 + TIM2\nPC3 both-edge"]
+        TX["TX encode\nTIM2 CC2\nPC4 via PHY"]
         COLL["Collision\ndetect"]
     end
     style PHY fill:#fff8e1,stroke:#d6b656,stroke-width:2px
@@ -28,7 +28,7 @@ flowchart LR
         QUERY["Queries\nSTATUS LEVEL\nDEVICE TYPE"]
         ADDR["Addressing\nINIT RANDOM\nCOMPARE PROGRAM"]
         DT8C["DT8 colour\nRGB WAF Tc\nACTIVATE"]
-        FADEE["Fade engine\nfadeTime\nfadeRate"]
+        FADEE["Fade engine\nfadeTime/Rate\n+ DT8 colour"]
     end
     style PROT fill:#e3f2fd,stroke:#6c8ebf,stroke-width:2px
     style DISPATCH fill:#bbdefb,stroke:#6c8ebf,stroke-width:2px

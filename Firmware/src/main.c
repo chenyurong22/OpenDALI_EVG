@@ -4,7 +4,7 @@
     This file contains:
     - millis() implementation via SysTick (ch32fun has no built-in millis)
     - PSU control (PA2) for external power supply enable/disable
-    - ISR wrappers for DALI RX (EXTI0) and TX/idle (TIM2 CH2/CH4)
+    - ISR wrappers for DALI RX (EXTI3) and TX/idle (TIM2 CH2/CH4)
     - Main loop calling dali_protocol_process(), dali_fade_tick(), nvm_tick()
 
     LED output is handled by led_driver.c, selected at compile time
@@ -183,7 +183,7 @@ static void on_colour(const uint8_t *levels, uint8_t count) {
  * ISR Wrappers — Connect hardware interrupts to DALI PHY state machines
  * ====================================================================
  * CH32V003 has a shared EXTI7_0 handler for all EXTI lines 0-7.
- * We only use EXTI line 0 (PC0 = DALI RX pin).
+ * We only use EXTI line 3 (PC3 = DALI RX pin).
  *
  * TIM2 has a single ISR for all channels. We check which channel
  * triggered (CC2 = TX tick, CC4 = idle timeout) and dispatch accordingly.
@@ -229,7 +229,7 @@ void TIM2_IRQHandler(void) {
  *   4. millis_init()     — SysTick 1 ms tick (needed by DALI timeouts)
  *   5. psu_ctrl_init()   — PSU enable GPIO (PA2), initially off
  *   6. led_driver_init() — LED output (TIM1 PWM or SPI+DMA for WS2812)
- *   7. dali_phy_init()   — TIM2 + EXTI0 for DALI Manchester RX/TX
+ *   7. dali_phy_init()   — TIM2 + EXTI3 for DALI Manchester RX/TX
  *   8. callbacks         — Connect DALI level/colour changes to LED driver
  *   9. eeprom_init()     — Initialize I2C1 for AT24C256 EEPROM
  *  10. nvm_init()        — Load persisted config from EEPROM + write identity block
@@ -345,7 +345,7 @@ int main(void) {
          * Only sleep when:
          *   1. No backward frame is being transmitted (TX idle)
          *   2. No RX activity in the last 20 ms (no frame in progress)
-         * SysTick (1 ms) or EXTI0 (next DALI edge) will wake the CPU.
+         * SysTick (1 ms) or EXTI3 (next DALI edge) will wake the CPU.
          * CH32V003 Sleep mode: core stops, all peripherals keep running
          * (TIM2, EXTI, SysTick continue). Do NOT use Standby (SLEEPDEEP=1)
          * — that stops TIM2 and breaks DALI edge timing. */

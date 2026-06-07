@@ -12,6 +12,7 @@
 
 #include "ch32fun.h"
 #include "dali_dt8.h"
+#include "dali_fade.h"
 #include "../../logger.h"
 #include "../dali_state.h"
 #include "../dali_dtr.h"
@@ -51,13 +52,14 @@ static void tc_to_ww_cw(uint16_t mirek, uint8_t *out) {
 void dali_dt8_process_command(uint8_t cmd) {
     switch (cmd) {
     case DALI_DT8_ACTIVATE:
-        for (uint8_t i = 0; i < 4; i++)
-            ds.colour_actual[i] = ds.colour_temp[i];
-        if (ds.colour_callback)
-            ds.colour_callback((const uint8_t *)ds.colour_actual, EVG_NUM_COLOURS);
-        LOG_CMD("DT8 ACT R=%d G=%d B=%d W=%d",
-                ds.colour_actual[0], ds.colour_actual[1],
-                ds.colour_actual[2], ds.colour_actual[3]);
+        /* Crossfade the active colour toward the staged colour over the
+         * current fade time (IEC 62386-209 §10.4 — colour follows fadeTime).
+         * fadeTime 0 → applied instantly inside dali_fade_colour_start(). */
+        dali_fade_colour_start(ds.colour_temp, dali_fade_get_effective_ms());
+        LOG_CMD("DT8 ACT R=%d G=%d B=%d W=%d (fade %lums)",
+                ds.colour_temp[0], ds.colour_temp[1],
+                ds.colour_temp[2], ds.colour_temp[3],
+                (unsigned long)dali_fade_get_effective_ms());
         break;
 
 #if EVG_DT8_HAS_PRIMARY
