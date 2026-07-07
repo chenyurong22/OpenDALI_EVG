@@ -33,6 +33,7 @@ Commands:
 | Command | Purpose |
 |---|---|
 | `flash <firmware.bin>` | Flash a firmware image to an EVG via DALI bus |
+| `flashbl <bootloader.bin>` | Update the EVG's DALI **bootloader** over the bus (no reboot — handled by the running firmware, max 1920 B; requires firmware with `dali_bl_update.c`) |
 | `scan` | Probe the DALI bus and list discovered gear |
 | *(no args)* | Launch the graphical interface |
 
@@ -52,6 +53,7 @@ The GUI provides:
 - Firmware .bin file selection
 - DALI short address (0-63)
 - GTIN and EVG Mode ID for Block 0 validation
+- **"Update BL..." button** — bootloader update over the bus (own file dialog, 1920-byte limit, confirmation prompt; uses the Address + GTIN fields; same engine as the `flashbl` CLI command)
 - Progress bar and scrollable log output
 
 ### `flash` — Firmware Update

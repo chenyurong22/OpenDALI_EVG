@@ -5,14 +5,17 @@
  * frames (IEC 62386-105). Responds to standard commands (START FW TRANSFER,
  * FINISH FW UPDATE, etc.) so it looks compliant from the outside.
  *
- * Block parsing: extracts firmware data from Block 1..n, skips Block 0
- * (info block), block headers, and trailing CRCs. No CRC verification
- * is performed — integrity is trusted or verified externally.
+ * Block parsing: Block 0 is validated (GTIN + EVG-mode key against the
+ * EEPROM identity block; expected Fletcher-16 of the payload captured from
+ * offsets 0x2C/0x2D). Block 1 carries the firmware payload; a Fletcher-16
+ * is accumulated over every received byte and checked at FINISH FW UPDATE —
+ * flash is only committed on match (single payload block supported).
  *
  * Flow:
  *   1. START FW TRANSFER → enter update mode, respond YES
  *   2. BEGIN BLOCK / TRANSFER BLOCK DATA → store firmware bytes in EEPROM
- *   3. FINISH FW UPDATE → copy EEPROM → flash, respond success (silence)
+ *   3. FINISH FW UPDATE → verify Fletcher-16 → copy EEPROM → flash,
+ *      silence = success, 0xFF = fault (old firmware resumes)
  *   4. RESTART FW → jump to user code
  *
  * Hardware:
@@ -108,14 +111,14 @@ static int wait_start(uint32_t timeout) {
     return 1;
 }
 
-static void rx_frame32(uint32_t *out) {
+static uint32_t rx_frame32(void) {
     delay(BIT_CYCLES + HALF_BIT_CYCLES + HALF_BIT_CYCLES / 2);
     uint32_t data = 0;
     for (int i = 0; i < 32; i++) {
         data = (data << 1) | bus_read();
         if (i < 31) delay(BIT_CYCLES);
     }
-    *out = data;
+    return data;
 }
 
 /* ── Manchester TX: 8-bit backward frame ─────────────────────────── */
@@ -170,6 +173,7 @@ static void flash_write_page(uint32_t addr, uint32_t *buf) {
 }
 
 static void boot_usercode(void) {
+    delay(BIT_CYCLES * 8);      /* let any pending backward frame settle */
     FLASH->BOOT_MODEKEYR = FLASH_KEY1;
     FLASH->BOOT_MODEKEYR = FLASH_KEY2;
     FLASH->STATR = 0;
@@ -198,11 +202,14 @@ static void i2c_init(void) {
     GPIOC->CFGLR &= ~(0xFFu << 4);
     GPIOC->CFGLR |= (0xDDu << 4);
     I2C1->CTLR2 = 24;
-    I2C1->CKCFGR = 120;
+    I2C1->CKCFGR = 120;     /* standard mode 100 kHz (24 MHz / (2*120)) */
     I2C1->CTLR1 = I2C_CTLR1_PE;
 }
 
-static void ee_write(uint16_t addr, uint8_t *data, uint8_t len) {
+/* Write-phase preamble shared by ee_write/ee_read: START + slave address
+ * (write) + 16-bit memory address. The low address byte is still in the
+ * shift register on return — the caller waits for TXE or BTF. */
+static void i2c_start_mem(uint16_t addr) {
     I2C1->CTLR1 |= I2C_CTLR1_START;
     while (!(I2C1->STAR1 & I2C_STAR1_SB));
     I2C1->DATAR = EE_I2C_ADDR;
@@ -211,6 +218,10 @@ static void ee_write(uint16_t addr, uint8_t *data, uint8_t len) {
     I2C1->DATAR = addr >> 8;
     while (!(I2C1->STAR1 & I2C_STAR1_TXE));
     I2C1->DATAR = addr & 0xFF;
+}
+
+static void ee_write(uint16_t addr, uint8_t *data, uint8_t len) {
+    i2c_start_mem(addr);
     while (!(I2C1->STAR1 & I2C_STAR1_TXE));
     for (uint8_t i = 0; i < len; i++) {
         I2C1->DATAR = data[i];
@@ -218,18 +229,27 @@ static void ee_write(uint16_t addr, uint8_t *data, uint8_t len) {
     }
     while (!(I2C1->STAR1 & I2C_STAR1_BTF));
     I2C1->CTLR1 |= I2C_CTLR1_STOP;
-    delay(120000);
+    /* ACK-poll until the internal write cycle completes (typ. 3-4 ms) —
+     * faster than the fixed worst-case 5 ms delay and robust against a
+     * slow EEPROM specimen. The device NAKs its address while busy. */
+    for (;;) {
+        I2C1->CTLR1 |= I2C_CTLR1_START;
+        while (!(I2C1->STAR1 & I2C_STAR1_SB));
+        I2C1->DATAR = EE_I2C_ADDR;
+        uint16_t st;
+        do { st = I2C1->STAR1; } while (!(st & (I2C_STAR1_ADDR | I2C_STAR1_AF)));
+        if (st & I2C_STAR1_ADDR) {
+            (void)I2C1->STAR2;                      /* clear ADDR */
+            I2C1->CTLR1 |= I2C_CTLR1_STOP;
+            return;
+        }
+        I2C1->STAR1 = (uint16_t)~I2C_STAR1_AF;      /* clear NAK, retry */
+        I2C1->CTLR1 |= I2C_CTLR1_STOP;
+    }
 }
 
 static void ee_read(uint16_t addr, uint8_t *buf, uint8_t len) {
-    I2C1->CTLR1 |= I2C_CTLR1_START;
-    while (!(I2C1->STAR1 & I2C_STAR1_SB));
-    I2C1->DATAR = EE_I2C_ADDR;
-    while (!(I2C1->STAR1 & I2C_STAR1_ADDR));
-    (void)I2C1->STAR2;
-    I2C1->DATAR = addr >> 8;
-    while (!(I2C1->STAR1 & I2C_STAR1_TXE));
-    I2C1->DATAR = addr & 0xFF;
+    i2c_start_mem(addr);
     while (!(I2C1->STAR1 & I2C_STAR1_BTF));
 
     I2C1->CTLR1 |= I2C_CTLR1_START;
@@ -267,18 +287,20 @@ static void copy_eeprom_to_flash(void) {
     for (int p = 0; p < NUM_PAGES; p++)
         flash_erase_page(USER_CODE_BASE + p * PAGE_SIZE);
 
-    uint32_t addr = USER_CODE_BASE;
-    uint16_t remaining = fw_total_size;
-    uint16_t ee_addr = EE_FW_ADDR;
-    while (remaining > 0) {
-        uint8_t chunk = (remaining >= PAGE_SIZE) ? PAGE_SIZE : remaining;
-        ee_read(ee_addr, page_buf, chunk);
+    /* Vector page (offset 0) is written LAST — it doubles as the commit
+     * marker: if power dies mid-copy it stays erased (0xFFFFFFFF) and the
+     * next boot lands back in the bootloader (see check in main). */
+    uint16_t off = PAGE_SIZE;
+    for (;;) {
+        if (off >= fw_total_size) off = 0;      /* wrap to vector page */
+        uint16_t remaining = fw_total_size - off;
+        uint8_t chunk = (remaining >= PAGE_SIZE) ? PAGE_SIZE : (uint8_t)remaining;
+        ee_read(EE_FW_ADDR + off, page_buf, chunk);
         for (uint8_t i = chunk; i < PAGE_SIZE; i++)
             page_buf[i] = 0xFF;
-        flash_write_page(addr, (uint32_t *)page_buf);
-        addr += PAGE_SIZE;
-        ee_addr += chunk;
-        remaining -= chunk;
+        flash_write_page(USER_CODE_BASE + off, (uint32_t *)page_buf);
+        if (off == 0) break;
+        off += PAGE_SIZE;
     }
     FLASH->CTLR = CR_LOCK_Set;
 }
@@ -312,7 +334,10 @@ int main(void) {
     FLASH->BOOT_MODEKEYR = FLASH_KEY2;
     FLASH->STATR &= ~(1 << 14);
 
-    if (!sw_boot && !btn_held)
+    /* Empty vector page = interrupted update (commit marker missing,
+     * see copy_eeprom_to_flash): stay in the bootloader instead of
+     * resetting into erased flash. */
+    if (!sw_boot && !btn_held && *(volatile uint32_t *)USER_CODE_BASE != 0xFFFFFFFFu)
         boot_usercode();
 
     i2c_init();
@@ -346,9 +371,8 @@ int main(void) {
     fw_total_size = 0;
 
     while (1) {
-        uint32_t frame;
         if (!wait_start(0x00FFFFFF)) continue;
-        rx_frame32(&frame);
+        uint32_t frame = rx_frame32();
 
         uint8_t b0 = (frame >> 24);
         uint8_t b1 = (frame >> 16);
@@ -363,16 +387,23 @@ int main(void) {
             if (currentBlock != 0) {
                 blockFault = 0;
                 fa = fb = 0;            /* reset Fletcher accumulator */
+                /* Restart staging from scratch: a retried update without a
+                 * reboot in between must NOT append to a stale partial image
+                 * (Fletcher only covers the new bytes and would pass).
+                 * Single-payload-block transfers only — which is what all
+                 * masters send. */
+                page_pos = 0;
+                ee_write_addr = EE_FW_ADDR;
+                fw_total_size = 0;
             }
             continue;
         }
 
         /* ── TRANSFER BLOCK DATA (0xBD) ─────────────────────────── */
         if (b0 == OP_BLOCK_DATA) {
-            uint8_t bytes[3] = { b1, b2, b3 };
-            for (int i = 0; i < 3; i++) {
+            for (int sh = 16; sh >= 0; sh -= 8) {
                 uint16_t pos = currentBlockByte++;
-                uint8_t d = bytes[i];
+                uint8_t d = (uint8_t)(frame >> sh);
 
                 if (currentBlock == 0) {
                     /* Block 0 — validate GTIN (pos 5..10), device key (0x2B),
@@ -413,9 +444,7 @@ int main(void) {
                 } else {
                     flush_to_eeprom();
                     copy_eeprom_to_flash();
-
                 }
-				delay(BIT_CYCLES * 8);
                 boot_usercode();
                 break;
             case CMD_Q_RUNNING:
@@ -440,7 +469,6 @@ int main(void) {
 
         case CMD_RESTART:
             tx_byte(0xFF);          /* YES — always allow */
-            delay(BIT_CYCLES * 8);
             boot_usercode();
             break;
         }

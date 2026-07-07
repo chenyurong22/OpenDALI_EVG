@@ -72,6 +72,7 @@ public partial class MainForm : Form
         SetControlsEnabled(false);
         btnStartUpdate.Enabled = false;
         btnUpdateAll.Enabled = false;
+        btnUpdateBl.Enabled = false;
         btnCancel.Enabled = false;
         Log($"Connection lost: {reason}");
     }
@@ -154,6 +155,7 @@ public partial class MainForm : Form
 
         btnStartUpdate.Enabled = false;
         btnUpdateAll.Enabled = false;
+        btnUpdateBl.Enabled = false;
         btnRescan.Enabled = false;
         btnCancel.Enabled = true;
         progressBar.Value = 0;
@@ -194,6 +196,7 @@ public partial class MainForm : Form
             bool stillConnected = _gateway?.IsConnected == true;
             btnStartUpdate.Enabled = stillConnected;
             btnUpdateAll.Enabled = stillConnected;
+            btnUpdateBl.Enabled = stillConnected;
             btnRescan.Enabled = stillConnected;
             btnCancel.Enabled = false;
             _updateCts = null;
@@ -268,6 +271,7 @@ public partial class MainForm : Form
 
         btnStartUpdate.Enabled = false;
         btnUpdateAll.Enabled = false;
+        btnUpdateBl.Enabled = false;
         btnRescan.Enabled = false;
         btnCancel.Enabled = true;
         _updateCts = new CancellationTokenSource();
@@ -319,6 +323,117 @@ public partial class MainForm : Form
             bool stillConnected = _gateway?.IsConnected == true;
             btnStartUpdate.Enabled = stillConnected;
             btnUpdateAll.Enabled = stillConnected;
+            btnUpdateBl.Enabled = stillConnected;
+            btnRescan.Enabled = stillConnected;
+            btnCancel.Enabled = false;
+            _updateCts = null;
+        }
+    }
+
+    private async void btnUpdateBl_Click(object? sender, EventArgs e)
+    {
+        if (_gateway == null || !_gateway.IsConnected)
+        {
+            Log("ERROR: Not connected to gateway");
+            return;
+        }
+
+        if (!byte.TryParse(txtShortAddress.Text, out byte shortAddr) || shortAddr > 63)
+        {
+            Log("ERROR: Short address must be 0-63");
+            return;
+        }
+
+        byte[] gtin;
+        try
+        {
+            gtin = Convert.FromHexString(txtGtin.Text.Replace(" ", "").Replace("0x", ""));
+            if (gtin.Length != 6) throw new FormatException("Must be 6 bytes");
+        }
+        catch
+        {
+            Log("ERROR: GTIN must be 6 bytes hex (e.g. 3452334E0CAD)");
+            return;
+        }
+
+        // The BL image gets its own file dialog — deliberately separate from
+        // the firmware path field, so an app image can't be picked by habit.
+        using var ofd = new OpenFileDialog
+        {
+            Filter = "Bootloader binary (*.bin)|*.bin|All files (*.*)|*.*",
+            Title = $"Select BOOTLOADER binary (max {DaliBootloader.BlMaxSize} bytes)"
+        };
+        if (ofd.ShowDialog() != DialogResult.OK) return;
+
+        byte[] blImage;
+        try
+        {
+            blImage = await File.ReadAllBytesAsync(ofd.FileName);
+        }
+        catch (Exception ex)
+        {
+            Log($"ERROR reading file: {ex.Message}");
+            return;
+        }
+
+        if (blImage.Length > DaliBootloader.BlMaxSize)
+        {
+            Log($"ERROR: Image too large for the boot area ({blImage.Length} bytes, max {DaliBootloader.BlMaxSize})");
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            $"Update the BOOTLOADER of the device at short address {shortAddr}?\n\n" +
+            $"Image: {Path.GetFileName(ofd.FileName)} ({blImage.Length} bytes)\n\n" +
+            "The app keeps running (no reboot), but a power loss during the\n" +
+            "~0.5 s flash window would brick the boot area (SWIO recovery only).\n" +
+            "Make sure the bus supply is stable.",
+            "Confirm bootloader update",
+            MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+        if (confirm != DialogResult.OK) return;
+
+        Log($"[BL] updating bootloader: {Path.GetFileName(ofd.FileName)} ({blImage.Length} bytes) -> short {shortAddr}");
+
+        btnStartUpdate.Enabled = false;
+        btnUpdateAll.Enabled = false;
+        btnUpdateBl.Enabled = false;
+        btnRescan.Enabled = false;
+        btnCancel.Enabled = true;
+        progressBar.Value = 0;
+        _updateCts = new CancellationTokenSource();
+
+        _bootloader = new DaliBootloader(_gateway);
+        _bootloader.OnLog += msg => SafeInvoke(() => Log(msg));
+        _bootloader.OnProgress += (cur, total) => SafeInvoke(() =>
+        {
+            if (total > 0)
+                progressBar.Value = Math.Min(100, cur * 100 / total);
+        });
+
+        try
+        {
+            var success = await _bootloader.UpdateBootloaderAsync(
+                blImage, shortAddr, gtin, _updateCts.Token);
+
+            progressBar.Value = success ? 100 : 0;
+            Log(success ? "=== BL UPDATE SUCCESSFUL ===" : "=== BL UPDATE FAILED ===");
+        }
+        catch (OperationCanceledException)
+        {
+            Log("BL update cancelled by user");
+            progressBar.Value = 0;
+        }
+        catch (Exception ex)
+        {
+            Log($"BL update error: {ex.Message}");
+            progressBar.Value = 0;
+        }
+        finally
+        {
+            bool stillConnected = _gateway?.IsConnected == true;
+            btnStartUpdate.Enabled = stillConnected;
+            btnUpdateAll.Enabled = stillConnected;
+            btnUpdateBl.Enabled = stillConnected;
             btnRescan.Enabled = stillConnected;
             btnCancel.Enabled = false;
             _updateCts = null;
@@ -344,6 +459,7 @@ public partial class MainForm : Form
     {
         btnStartUpdate.Enabled = connected;
         btnUpdateAll.Enabled = connected;
+        btnUpdateBl.Enabled = connected;
         grpUpdate.Enabled = connected;
         grpDevices.Enabled = connected;
         if (!connected) gridDevices.Rows.Clear();
@@ -363,6 +479,7 @@ public partial class MainForm : Form
         btnRescan.Enabled = false;
         btnStartUpdate.Enabled = false;
         btnUpdateAll.Enabled = false;
+        btnUpdateBl.Enabled = false;
         gridDevices.Rows.Clear();
         progressBar.Value = 0;
         try
@@ -415,6 +532,7 @@ public partial class MainForm : Form
             btnRescan.Enabled = stillConnected;
             btnStartUpdate.Enabled = stillConnected;
             btnUpdateAll.Enabled = stillConnected;
+            btnUpdateBl.Enabled = stillConnected;
         }
     }
 
