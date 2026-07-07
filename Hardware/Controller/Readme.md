@@ -1,13 +1,19 @@
-### Controller
+# Controller
 
 <img width="833" height="546" alt="image" src="https://github.com/user-attachments/assets/650aa0ba-976a-4230-8549-4366e191131c" />
+
+<img width="1827" height="857" alt="image" src="https://github.com/user-attachments/assets/f6a6d045-d7e3-48be-8826-83b9e46a826c" />
+
+<img width="692" height="334" alt="image" src="https://github.com/user-attachments/assets/e595dce8-a9e5-443e-a36c-ad8549adabf1" />
+
+
 
 
 The DALI PHY and microcontroller board. Handles all DALI-bus communication (IEC 62386-101/102 compatible), protocol processing, and generates the digital PWM/LED control signals. Built around the CH32V003F4U6 RISC-V microcontroller (20-pin QFN, 48 MHz, 16 KB Flash, 2 KB RAM).
 
 The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the MCU's 3.3V logic. See [`../Simulations/`](../Simulations/) for LTspice reference designs (isolated and non-isolated variants).
 
-#### Pin Assignment, CH32V003F4U6
+## Pin Assignment, CH32V003F4U6
 
 | Pin | Function | Direction | Peripheral | Notes |
 |-----|----------|-----------|------------|-------|
@@ -35,7 +41,7 @@ The PHY transceiver converts between the DALI bus voltage levels (0/16V) and the
 
 > **⚠ Galvanic isolation is MANDATORY.** AC-mains switching of the 250 W load board was tested on real hardware: the LED-power domain **must be galvanically isolated** from the DALI/MCU domain. The isolation barrier lives on the **load board**. The J4 ribbon connector is the controller↔load-board interface that feeds the isolator's input side.
 
-#### J4 — Controller ↔ LoadBoard ribbon connector (10-pin FFC, 0.5 mm pitch)
+## J4 — Load-board interface (10-pin FFC, 0.5 mm pitch)
 
 Pins 9 and 10 are dual-function (PWM **or** SPI), selected by the controller's `EVG_MODE` at compile time — so the same connector drives either a direct-PWM load board or a digital (SPI) load board with no controller hardware change:
 
@@ -53,7 +59,6 @@ Pins 9 and 10 are dual-function (PWM **or** SPI), selected by the controller's `
 | 10 | `PWM_CH1 / D_LED / MOSI` | PC6 | Red PWM **or** WS2812/SK6812 data **or** SPI MOSI |
 | M ×2 | `GND` | — | Connector mounting / shield tabs |
 
-#### Load-board interface
 
 The connector is deliberately over-provisioned, because **one controller is meant to serve many generations of load board.** Each load board taps only the signals it needs, and the firmware selects the matching mode at compile time via `EVG_MODE` — so adopting a new load-board design is a recompile, not a controller respin. Power (`+3V3-D`, `GND`) and the `PSU-CTRL` enable line are always present; what varies from board to board is *how the colour and level data is actuated.*
 
@@ -82,7 +87,7 @@ For the actuation itself, each load board picks **one** of three paths:
 
 **Firmware updates** happen over the DALI bus itself via the IEC 62386-105 bootloader at `0x1FFFF000`. PA1 held low at reset routes into the bootloader (works for POR, NRST, and SYSRESETREQ thanks to the firmware-side `boot_button_check()`). PD1 (SWDIO) is the recovery path via WCH-LinkE for chips that have lost their flash content entirely.
 
-#### Hardware Validation
+## Hardware Validation
 
 | Test | Target | Result | Evidence |
 |------|--------|--------|----------|
@@ -125,7 +130,7 @@ C1: DALI bus, you can see sustained heavy traffic. C2: Voltage at Capacitor C24 
 <img width="2000" height="993" alt="lecroy-2026-05-22T20-21-50" src="https://github.com/user-attachments/assets/f04c51c8-fded-4714-8699-d7472f81fe63" />
 
 
-##### Current Consumption
+### Current Consumption
 
 Total current draw of the Controller board with firmware running. Target: < 2 mA to stay within DALI bus power limits.
 
